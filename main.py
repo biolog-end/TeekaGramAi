@@ -280,8 +280,8 @@ def start_telegram_thread(session_name_to_use: str):
     thread = threading.Thread(
         target=asyncio.run, 
         args=(telegram_main_loop( 
-            app_config.TELAGRAMM_API_ID,
-            app_config.TELAGRAMM_API_HASH,
+            app_config.TelegramConfig.API_ID,
+            app_config.TelegramConfig.API_HASH,
             session_name_to_use,  
             telegram_ready_event 
         ),),

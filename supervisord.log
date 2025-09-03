@@ -1,0 +1,70 @@
+2025-09-03 21:16:08,235 INFO RPC interface 'supervisor' initialized
+2025-09-03 21:16:08,235 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2025-09-03 21:16:08,238 INFO daemonizing the supervisord process
+2025-09-03 21:16:08,239 INFO supervisord started with pid 4959
+2025-09-03 21:16:09,244 INFO spawned: 'teekagramai' with pid 4985
+2025-09-03 21:16:10,761 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:10,762 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:11,085 INFO spawned: 'teekagramai' with pid 5014
+2025-09-03 21:16:11,545 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:12,549 INFO spawned: 'teekagramai' with pid 5023
+2025-09-03 21:16:12,978 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:14,983 INFO spawned: 'teekagramai' with pid 5048
+2025-09-03 21:16:16,423 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:16,424 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:17,371 INFO spawned: 'teekagramai' with pid 5085
+2025-09-03 21:16:17,748 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:18,752 INFO spawned: 'teekagramai' with pid 5094
+2025-09-03 21:16:19,172 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:21,177 INFO spawned: 'teekagramai' with pid 5104
+2025-09-03 21:16:21,615 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:24,621 INFO spawned: 'teekagramai' with pid 5143
+2025-09-03 21:16:25,041 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:26,043 INFO gave up: teekagramai entered FATAL state, too many start retries too quickly
+2025-09-03 21:16:32,777 INFO spawned: 'teekagramai' with pid 5359
+2025-09-03 21:16:33,780 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:35,752 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:36,756 INFO spawned: 'teekagramai' with pid 5382
+2025-09-03 21:16:37,758 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:38,913 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:38,916 INFO spawned: 'teekagramai' with pid 5390
+2025-09-03 21:16:39,931 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:41,093 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:42,098 INFO spawned: 'teekagramai' with pid 5400
+2025-09-03 21:16:43,100 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:44,432 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:45,436 INFO spawned: 'teekagramai' with pid 5412
+2025-09-03 21:16:46,438 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:48,006 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:49,009 INFO spawned: 'teekagramai' with pid 5425
+2025-09-03 21:16:50,012 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:52,622 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:53,625 INFO spawned: 'teekagramai' with pid 5544
+2025-09-03 21:16:54,627 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:16:57,113 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:16:58,116 INFO spawned: 'teekagramai' with pid 5592
+2025-09-03 21:16:59,118 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:00,596 INFO waiting for teekagramai to stop
+2025-09-03 21:17:00,611 WARN stopped: teekagramai (terminated by SIGTERM)
+2025-09-03 21:17:00,616 INFO spawned: 'teekagramai' with pid 5644
+2025-09-03 21:17:01,618 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:03,735 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:04,740 INFO spawned: 'teekagramai' with pid 5661
+2025-09-03 21:17:05,742 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:07,815 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:07,819 INFO spawned: 'teekagramai' with pid 5672
+2025-09-03 21:17:08,835 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:10,705 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:11,708 INFO spawned: 'teekagramai' with pid 5689
+2025-09-03 21:17:12,711 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:14,650 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:15,653 INFO spawned: 'teekagramai' with pid 5705
+2025-09-03 21:17:16,656 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:19,570 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:20,574 INFO spawned: 'teekagramai' with pid 5801
+2025-09-03 21:17:21,576 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:23,460 WARN exited: teekagramai (exit status 1; not expected)
+2025-09-03 21:17:24,464 INFO spawned: 'teekagramai' with pid 5888
+2025-09-03 21:17:25,466 INFO success: teekagramai entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+2025-09-03 21:17:27,245 INFO waiting for teekagramai to stop
+2025-09-03 21:17:27,278 WARN stopped: teekagramai (terminated by SIGTERM)
