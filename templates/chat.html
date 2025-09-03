@@ -233,138 +233,97 @@
                 </p>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="checkbox-label tooltip">
+                        <label class="checkbox-label">
                             <input type="checkbox" name="can_see_photos" id="can_see_photos" value="true" {% if chat_settings.get('can_see_photos', True) %}checked{% endif %}>
-                            <i class="fas fa-image"></i> Может видеть фото
-                            <span class="tooltiptext">Если включено, ИИ будет получать и анализировать изображения из чата. Отключение экономит токены и ускоряет работу.</span>
+                            Может видеть фото
                         </label>
                     </div>
                     <div class="form-group">
-                        <label class="checkbox-label tooltip">
+                        <label class="checkbox-label">
                             <input type="checkbox" name="can_see_videos" id="can_see_videos" value="true" {% if chat_settings.get('can_see_videos', True) %}checked{% endif %}>
-                            <i class="fas fa-video"></i> Может видеть видео и кружочки
-                            <span class="tooltiptext">Если включено, ИИ будет получать и анализировать видеофайлы и видеосообщения из чата. Потребляет много токенов.</span>
+                             Может видеть видео и кружочки
                         </label>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="checkbox-label tooltip">
+                        <label class="checkbox-label">
                             <input type="checkbox" name="can_see_audio" id="can_see_audio" value="true" {% if chat_settings.get('can_see_audio', True) %}checked{% endif %}>
-                            <i class="fas fa-microphone"></i> Может "слышать" аудио и голосовые
-                            <span class="tooltiptext">Если включено, ИИ будет получать и анализировать аудиофайлы и голосовые сообщения. Требует дополнительной обработки.</span>
+                            Может "слышать" аудио и голосовые
                         </label>
                     </div>
                     <div class="form-group">
-                        <label class="checkbox-label tooltip">
+                        <label class="checkbox-label">
                             <input type="checkbox" name="can_see_files_pdf" id="can_see_files_pdf" value="true" {% if chat_settings.get('can_see_files_pdf', True) %}checked{% endif %}>
-                            <i class="fas fa-file-pdf"></i> Может читать файлы (PDF)
-                            <span class="tooltiptext">Если включено, ИИ будет получать и читать содержимое PDF-файлов из чата. Потребляет много токенов для больших документов.</span>
+                            Может читать файлы (PDF)
                         </label>
                     </div>
                 </div>
                 <h4>Настройки Авто-режима</h4>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="auto_mode_check_interval" class="tooltip">
-                            <i class="fas fa-clock"></i> Интервал проверки (сек)
-                            <span class="tooltiptext">Как часто бот проверяет чат на наличие новых сообщений. Меньшее значение = более быстрая реакция, но больше нагрузки на API.</span>
-                        </label>
+                        <label for="auto_mode_check_interval">Интервал проверки (сек)</label>
                         <input type="number" step="0.1" name="auto_mode_check_interval" id="auto_mode_check_interval" value="{{ chat_settings.auto_mode_check_interval }}" required>
-                        <small>Рекомендуется: 3-5 секунд</small>
+                        <small>Как часто бот ищет новые сообщения.</small>
                     </div>
                     <div class="form-group">
-                        <label for="auto_mode_initial_wait" class="tooltip">
-                            <i class="fas fa-pause"></i> Пауза после ответа (сек)
-                            <span class="tooltiptext">Время ожидания после получения сообщения, чтобы дать собеседнику возможность дописать что-то еще. Помогает избежать перебивания.</span>
-                        </label>
+                        <label for="auto_mode_initial_wait">Пауза после ответа (сек)</label>
                         <input type="number" step="0.1" name="auto_mode_initial_wait" id="auto_mode_initial_wait" value="{{ chat_settings.auto_mode_initial_wait }}" required>
-                        <small>Рекомендуется: 5-10 секунд</small>
+                        <small>Сколько ждать, давая собеседнику дописать.</small>
                     </div>
                 </div>
                  <div class="form-group">
-                    <label for="auto_mode_no_reply_timeout" class="tooltip">
-                        <i class="fas fa-hourglass-half"></i> Таймаут молчания (мин)
-                        <span class="tooltiptext">Через сколько минут молчания бот сам начнет разговор. Полезно для поддержания активности диалога.</span>
-                    </label>
+                    <label for="auto_mode_no_reply_timeout">Таймаут молчания (мин)</label>
                     <input type="number" step="0.1" name="auto_mode_no_reply_timeout" id="auto_mode_no_reply_timeout" value="{{ chat_settings.auto_mode_no_reply_timeout }}" required>
-                    <small>Рекомендуется: 3-5 минут</small>
+                    <small>Через сколько минут молчания написать самому.</small>
                 </div>
                 <div class="form-group">
-                    <label for="auto_mode_no_reply_suffix" class="tooltip">
-                        <i class="fas fa-comment-dots"></i> Промпт для напоминания о себе
-                        <span class="tooltiptext">Этот текст добавляется к системному промпту, когда бот решает написать первым после длительного молчания.</span>
-                    </label>
+                    <label for="auto_mode_no_reply_suffix">Промпт для напоминания о себе</label>
                     <textarea name="auto_mode_no_reply_suffix" id="auto_mode_no_reply_suffix" rows="2">{{ chat_settings.auto_mode_no_reply_suffix }}</textarea>
-                    <small>Например: "Поинтересуйся, все ли в порядке"</small>
+                    <small>Добавляется к промпту при срабатывании таймаута.</small>
                 </div>
 
                 <h4>Настройки симуляции и отправки</h4>
                  <div class="form-group">
-                    <label for="num_messages_to_fetch" class="tooltip">
-                        <i class="fas fa-history"></i> Количество сообщений для контекста
-                        <span class="tooltiptext">Сколько последних сообщений из истории чата будет передано ИИ для генерации ответа. Больше сообщений = лучший контекст, но больше токенов.</span>
-                    </label>
+                    <label for="num_messages_to_fetch">Количество сообщений для контекста</label>
                     <input type="number" name="num_messages_to_fetch" id="num_messages_to_fetch" value="{{ chat_settings.num_messages_to_fetch }}" required>
-                    <small>Рекомендуется: 50-100 сообщений</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="sticker_choosing_delay_min" class="tooltip">
-                            <i class="fas fa-smile"></i> Мин. пауза для стикера (с)
-                            <span class="tooltiptext">Минимальное время "размышления" перед отправкой стикера. Имитирует естественное поведение человека при выборе стикера.</span>
-                        </label>
+                        <label for="sticker_choosing_delay_min">Мин. пауза для стикера (с)</label>
                         <input type="number" step="0.1" name="sticker_choosing_delay_min" id="sticker_choosing_delay_min" value="{{ chat_settings.sticker_choosing_delay_min }}" required>
                     </div>
                     <div class="form-group">
-                        <label for="sticker_choosing_delay_max" class="tooltip">
-                            <i class="fas fa-smile"></i> Макс. пауза для стикера (с)
-                            <span class="tooltiptext">Максимальное время "размышления" перед отправкой стикера. Случайный выбор между мин. и макс. значениями.</span>
-                        </label>
+                        <label for="sticker_choosing_delay_max">Макс. пауза для стикера (с)</label>
                         <input type="number" step="0.1" name="sticker_choosing_delay_max" id="sticker_choosing_delay_max" value="{{ chat_settings.sticker_choosing_delay_max }}" required>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="base_thinking_delay_s_min" class="tooltip">
-                            <i class="fas fa-brain"></i> Мин. пауза до печати (с)
-                            <span class="tooltiptext">Минимальное время "размышления" перед началом печати ответа. Имитирует естественную паузу человека перед ответом.</span>
-                        </label>
+                        <label for="base_thinking_delay_s_min">Мин. пауза до печати (с)</label>
                         <input type="number" step="0.1" name="base_thinking_delay_s_min" id="base_thinking_delay_s_min" value="{{ chat_settings.base_thinking_delay_s_min }}" required>
                     </div>
                     <div class="form-group">
-                        <label for="base_thinking_delay_s_max" class="tooltip">
-                            <i class="fas fa-brain"></i> Макс. пауза до печати (с)
-                            <span class="tooltiptext">Максимальное время "размышления" перед началом печати. Случайный выбор между мин. и макс. значениями.</span>
-                        </label>
+                        <label for="base_thinking_delay_s_max">Макс. пауза до печати (с)</label>
                         <input type="number" step="0.1" name="base_thinking_delay_s_max" id="base_thinking_delay_s_max" value="{{ chat_settings.base_thinking_delay_s_max }}" required>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="typing_delay_ms_min" class="tooltip">
-                            <i class="fas fa-keyboard"></i> Мин. скорость печати (мс/символ)
-                            <span class="tooltiptext">Минимальная задержка между символами при имитации печати. Меньше = быстрее печать. Имитирует реальную скорость набора текста.</span>
-                        </label>
+                        <label for="typing_delay_ms_min">Скорость печати (мс/симв)</label>
                         <input type="number" step="1" name="typing_delay_ms_min" id="typing_delay_ms_min" value="{{ chat_settings.typing_delay_ms_min }}" required>
-                        <small>Быстрая печать (рекомендуется: 40-60)</small>
+                        <small>От (меньше = быстрее)</small>
                     </div>
                     <div class="form-group">
-                        <label for="typing_delay_ms_max" class="tooltip">
-                            <i class="fas fa-keyboard"></i> Макс. скорость печати (мс/символ)
-                            <span class="tooltiptext">Максимальная задержка между символами. Больше = медленнее печать. Случайный выбор между мин. и макс. создает естественную вариативность.</span>
-                        </label>
+                        <label for="typing_delay_ms_max">Скорость печати (мс/симв)</label>
                         <input type="number" step="1" name="typing_delay_ms_max" id="typing_delay_ms_max" value="{{ chat_settings.typing_delay_ms_max }}" required>
-                        <small>Медленная печать (рекомендуется: 80-120)</small>
+                        <small>До (больше = медленнее)</small>
                     </div>
                 </div>
                  <div class="form-group">
-                    <label for="max_typing_duration_s" class="tooltip">
-                        <i class="fas fa-stopwatch"></i> Макс. длительность печати (сек)
-                        <span class="tooltiptext">Максимальное время имитации печати, независимо от длины сообщения. Предотвращает слишком долгую симуляции для очень длинных текстов.</span>
-                    </label>
+                    <label for="max_typing_duration_s">Макс. длительность печати (сек)</label>
                     <input type="number" step="0.5" name="max_typing_duration_s" id="max_typing_duration_s" value="{{ chat_settings.max_typing_duration_s }}" required>
-                    <small>Рекомендуется: 20-30 секунд максимум</small>
+                    <small>Ограничение, чтобы симуляция не длилась вечно.</small>
                 </div>
                 
                 <!-- Создаем контейнер для кнопок, чтобы выровнять их справа -->
