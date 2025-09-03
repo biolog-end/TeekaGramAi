@@ -1,0 +1,409 @@
+
+{% extends "base.html" %}
+
+{% block title %}Чат с {{ chat_info.name if chat_info else '...' }}{% endblock %}
+
+{% block content %}
+
+<div class="content-card"> 
+    <h1>Чат с {{ chat_info.name if chat_info else 'Неизвестный чат' }}</h1>
+    <p class="chat-id-display"><small>ID чата: {{ chat_id }}</small></p>
+
+    {% if history_error %}
+         
+    {% endif %}
+
+    
+    <div class="update-history-form">
+        <form method="get" action="{{ url_for('chat_page', chat_id=chat_id) }}">
+             <label for="num_messages_to_load">Загрузить сообщений:</label>
+             <input type="number" name="limit" id="num_messages_to_load" value="{{ current_limit }}" min="1" max="500">
+             <button type="submit">Обновить</button>
+        </form>
+    </div>
+
+    <h2>История сообщений ({{ 'Последние ' ~ history | length if history else 'Нет сообщений' }})</h2>
+    <div class="chat-history">
+        {% if history %}
+            {% for msg in history %}
+                <div class="message {{ msg.role }}">
+                    
+                    {% for part in msg.parts %}
+                        {% if part.text %}
+                            <pre>{{ part.text }}</pre>
+                        {% endif %}
+
+                        
+                        {% if part.image_base64 %}
+                            <img src="data:{{ part.mime_type }};base64,{{ part.image_base64 }}"
+                                alt="Изображение из чата"
+                                style="max-width: 100%; border-radius: 12px; margin-top: 8px;">
+                        
+                        
+                        {% elif part.video_base64 and part.mime_type == 'video/mp4' %}
+                            <video controls loop autoplay muted
+                                style="max-width: 100%; border-radius: 12px; margin-top: 8px;">
+                                <source src="data:{{ part.mime_type }};base64,{{ part.video_base64 }}" type="{{ part.mime_type }}">
+                                Ваш браузер не поддерживает тэг video.
+                            </video>
+                        {% endif %}
+                        
+
+                    {% endfor %}
+                    
+                </div>
+            {% endfor %}
+        {% else %}
+            {% if not history_error %}
+            <p style="text-align: center; color: var(--secondary-color); padding: 20px;">История сообщений пуста.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+
+<div class="content-card">
+    <div class="generation-header">
+        <h2>Генерация ответа</h2>
+        <!-- ИСПРАВЛЕННЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ -->
+        <form action="{{ url_for('set_generation_mode', chat_id=chat_id) }}" method="POST" class="mode-switcher-form">
+            <button type="submit" name="mode" value="prompt" class="switch-button {{ 'active' if generation_mode == 'prompt' }}">
+                Режим Промпта
+            </button>
+            <button type="submit" name="mode" value="character" class="switch-button {{ 'active' if generation_mode == 'character' }}">
+                Режим Персонажа
+            </button>
+        </form>
+    </div>
+
+    {% if generation_error %}
+        <div class="alert alert-error">{{ generation_error }}</div>
+    {% endif %}
+
+    <!-- ======================= РЕЖИМ "ПРОМПТ" ======================= -->
+    <div id="prompt-mode-view" style="display: {{ 'block' if generation_mode == 'prompt' else 'none' }};">
+        <p class="settings-description">В этом режиме для каждого чата используется свой отдельный системный промпт. Просто и быстро.</p>
+        <form action="{{ url_for('generate_reply', chat_id=chat_id) }}" method="post" id="generate-form-prompt">
+            <input type="hidden" name="history_limit" value="{{ current_limit }}">
+            <div class="form-group">
+                <label for="system_prompt">📝 Системный промпт (инструкция для ИИ):</label>
+                <textarea name="system_prompt" id="system_prompt" rows="6">{{ loaded_system_prompt }}</textarea>
+                <small>Нажмите "Сохранить промпт", чтобы запомнить его для этого чата.</small>
+            </div>
+            <div class="form-group">
+                <label for="model_name_prompt">🤖 Модель Gemini:</label>
+                <input type="text" name="model_name" id="model_name_prompt" value="{{ default_model_name }}" required>
+            </div>
+            <div class="form-actions">
+                 <button type="submit" class="generate-button">Сгенерировать ответ</button>
+                 <form action="{{ url_for('save_prompt', chat_id=chat_id) }}" method="post" class="inline-form">
+                     <input type="hidden" name="prompt_to_save" id="prompt_to_save_hidden">
+                     <button type="button" class="button-secondary" onclick="document.getElementById('prompt_to_save_hidden').value = document.getElementById('system_prompt').value; this.form.submit();">Сохранить промпт</button>
+                </form>
+            </div>
+        </form> 
+    </div>
+
+    <!-- ======================= РЕЖИМ "ПЕРСОНАЖ" ======================= -->
+    <div id="character-mode-view" style="display: {{ 'block' if generation_mode == 'character' else 'none' }};">
+        <div class="character-management-section">
+            <h4>1. Выбор и создание персонажа</h4>
+            <div class="character-management">
+                <div class="character-selector">
+                    <form action="{{ url_for('set_active_character', chat_id=chat_id) }}" method="POST" id="character-select-form">
+                        <label for="character_id">Активный персонаж:</label>
+                        <select name="character_id" id="character_id" onchange="this.form.submit()">
+                            <option value="" disabled {{ 'selected' if not active_character_id }}>-- Выберите персонажа --</option>
+                            {% for char_id, char_data in all_characters.items() %}
+                            <option value="{{ char_id }}" {{ 'selected' if char_id == active_character_id }}>{{ char_data.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+                <div class="character-creator">
+                    <form action="{{ url_for('create_character') }}" method="POST">
+                        <input type="text" name="new_character_name" placeholder="Имя нового персонажа" required>
+                        <button type="submit" class="button-success">✨ Создать</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        {% if active_character_id and active_character_data %}
+        <div class="character-editor-section">
+            <h4>2. Редактор персонажа: "{{ active_character_data.name }}"</h4>
+            <form action="{{ url_for('save_character', character_id=active_character_id) }}" method="POST" id="character-data-form">
+                <div class="form-group"><label>Имя персонажа:</label><input type="text" name="character_name" value="{{ active_character_data.name }}"></div>
+                <div class="form-group"><label>👤 Личность персонажа:</label><textarea name="personality_prompt" class="prompt-field personality-field" rows="5">{{ active_character_data.personality_prompt }}</textarea></div>
+                <div class="form-group"><label>🧠 Память персонажа (можно редактировать):</label><textarea name="memory_prompt" class="prompt-field memory-field" rows="6">{{ active_character_data.memory_prompt }}</textarea></div>
+                <div class="form-group"><label>🛠️ Системные команды:</label><textarea name="system_commands_prompt" class="prompt-field system-field" rows="4">{{ active_character_data.system_commands_prompt }}</textarea></div>
+                <div class="form-group"><label>⚙️ Промпт для обновления памяти:</label><textarea name="memory_update_prompt" class="prompt-field memory-update-field" rows="5">{{ active_character_data.memory_update_prompt }}</textarea></div>
+                <button type="submit" class="button-save-character">Сохранить все данные персонажа</button>
+            </form>
+        </div>
+
+        <div class="character-actions-section">
+            <h4>3. Действия в чате</h4>
+            <div class="character-actions">
+                <form action="{{ url_for('generate_reply', chat_id=chat_id) }}" method="post" id="generate-form-character">
+                    <input type="hidden" name="history_limit" value="{{ current_limit }}">
+                    <div class="form-group"><label for="model_name_char">🤖 Модель Gemini для ответа:</label><input type="text" name="model_name" id="model_name_char" value="{{ default_model_name }}" required></div>
+                    <button type="submit" class="generate-button">Сгенерировать ответ</button>
+                </form>
+                <form action="{{ url_for('update_memory_route', chat_id=chat_id) }}" method="POST">
+                     <button type="submit" class="button-secondary" onclick="return confirm('Это действие проанализирует последние сообщения и добавит их суть в память персонажа. Продолжить?');">✍️ Добавить в память</button>
+                </form>
+            </div>
+        </div>
+        
+        {% else %}
+            <p class="centered-message">Пожалуйста, выберите или создайте персонажа, чтобы продолжить.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- ==== БЛОКИ СТИКЕРОВ И НАСТРОЕК (ТЕПЕРЬ ОБЩИЕ И ВНЕ УСЛОВИЙ) ====== -->
+<!-- =================================================================== -->
+<div class="content-card">
+    <div class="sticker-controls">
+        <h3>Управление стикерами</h3>
+        <p class="settings-description">
+            {% if generation_mode == 'character' %}
+            Эти настройки будут применены <strong>для активного персонажа</strong>.
+            {% else %}
+            Эти настройки будут применены <strong>глобально</strong> (для режима "Промпт").
+            {% endif %}
+        </p>
+        <form action="{{ url_for('update_sticker_status', chat_id=chat_id) }}" method="post">
+            <details class="sticker-dropdown">
+                <summary>Включить/отключить наборы стикеров</summary>
+                <div class="sticker-list">
+                    {% if sticker_packs %}
+                        {% for pack in sticker_packs %}
+                        <label class="sticker-item">
+                            {% set is_checked = (pack.codename in active_character_data.enabled_sticker_packs) if generation_mode == 'character' else pack.enabled %}
+                            <input type="checkbox" name="sticker_enabled" value="{{ pack.codename }}" {{ 'checked' if is_checked }}>
+                            <span>{{ pack.codename }}</span>
+                        </label>
+                        {% endfor %}
+                    {% else %}
+                        <p>Наборы стикеров не найдены.</p>
+                    {% endif %}
+                </div>
+            </details>
+            <div class="sticker-buttons">
+                <button type="submit">Сохранить статусы</button>
+                <button type="button" id="copy-sticker-prompt-btn" data-sticker-prompt="{{ sticker_prompt_text_for_js }}">Скопировать промпт</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="content-card">
+    <details class="advanced-settings-details">
+        <summary><span class="summary-title"><span class="summary-icon">⚙️</span> Продвинутые настройки чата</span></summary>
+        <div class="settings-content-wrapper">
+             <p class="settings-description">
+                {% if generation_mode == 'character' %}
+                Эти настройки будут применены <strong>для активного персонажа</strong>.
+                {% else %}
+                Эти настройки будут применены <strong>для этого чата</strong> в режиме "Промпт".
+                {% endif %}
+            </p>
+            <form action="{{ url_for('save_chat_settings_route', chat_id=chat_id) }}" method="post" id="advanced-settings-form">
+                <h4>Настройки Авто-режима</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="auto_mode_check_interval">Интервал проверки (сек)</label>
+                        <input type="number" step="0.1" name="auto_mode_check_interval" id="auto_mode_check_interval" value="{{ chat_settings.auto_mode_check_interval }}" required>
+                        <small>Как часто бот ищет новые сообщения.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="auto_mode_initial_wait">Пауза после ответа (сек)</label>
+                        <input type="number" step="0.1" name="auto_mode_initial_wait" id="auto_mode_initial_wait" value="{{ chat_settings.auto_mode_initial_wait }}" required>
+                        <small>Сколько ждать, давая собеседнику дописать.</small>
+                    </div>
+                </div>
+                 <div class="form-group">
+                    <label for="auto_mode_no_reply_timeout">Таймаут молчания (мин)</label>
+                    <input type="number" step="0.1" name="auto_mode_no_reply_timeout" id="auto_mode_no_reply_timeout" value="{{ chat_settings.auto_mode_no_reply_timeout }}" required>
+                    <small>Через сколько минут молчания написать самому.</small>
+                </div>
+                <div class="form-group">
+                    <label for="auto_mode_no_reply_suffix">Промпт для напоминания о себе</label>
+                    <textarea name="auto_mode_no_reply_suffix" id="auto_mode_no_reply_suffix" rows="2">{{ chat_settings.auto_mode_no_reply_suffix }}</textarea>
+                    <small>Добавляется к промпту при срабатывании таймаута.</small>
+                </div>
+
+                <h4>Настройки симуляции и отправки</h4>
+                 <div class="form-group">
+                    <label for="num_messages_to_fetch">Количество сообщений для контекста</label>
+                    <input type="number" name="num_messages_to_fetch" id="num_messages_to_fetch" value="{{ chat_settings.num_messages_to_fetch }}" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sticker_choosing_delay_min">Мин. пауза для стикера (с)</label>
+                        <input type="number" step="0.1" name="sticker_choosing_delay_min" id="sticker_choosing_delay_min" value="{{ chat_settings.sticker_choosing_delay_min }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sticker_choosing_delay_max">Макс. пауза для стикера (с)</label>
+                        <input type="number" step="0.1" name="sticker_choosing_delay_max" id="sticker_choosing_delay_max" value="{{ chat_settings.sticker_choosing_delay_max }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="base_thinking_delay_s_min">Мин. пауза до печати (с)</label>
+                        <input type="number" step="0.1" name="base_thinking_delay_s_min" id="base_thinking_delay_s_min" value="{{ chat_settings.base_thinking_delay_s_min }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="base_thinking_delay_s_max">Макс. пауза до печати (с)</label>
+                        <input type="number" step="0.1" name="base_thinking_delay_s_max" id="base_thinking_delay_s_max" value="{{ chat_settings.base_thinking_delay_s_max }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="typing_delay_ms_min">Скорость печати (мс/симв)</label>
+                        <input type="number" step="1" name="typing_delay_ms_min" id="typing_delay_ms_min" value="{{ chat_settings.typing_delay_ms_min }}" required>
+                        <small>От (меньше = быстрее)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="typing_delay_ms_max">Скорость печати (мс/симв)</label>
+                        <input type="number" step="1" name="typing_delay_ms_max" id="typing_delay_ms_max" value="{{ chat_settings.typing_delay_ms_max }}" required>
+                        <small>До (больше = медленнее)</small>
+                    </div>
+                </div>
+                 <div class="form-group">
+                    <label for="max_typing_duration_s">Макс. длительность печати (сек)</label>
+                    <input type="number" step="0.5" name="max_typing_duration_s" id="max_typing_duration_s" value="{{ chat_settings.max_typing_duration_s }}" required>
+                    <small>Ограничение, чтобы симуляция не длилась вечно.</small>
+                </div>
+                
+                <!-- Создаем контейнер для кнопок, чтобы выровнять их справа -->
+                <div class="settings-actions">
+                    <form action="{{ url_for('reset_chat_settings_route', chat_id=chat_id) }}" method="post" class="reset-form">
+                        <button type="submit" class="button-secondary" onclick="return confirm('Вы уверены, что хотите сбросить все продвинутые настройки для этого чата к значениям по умолчанию?');">Сбросить</button>
+                    </form>
+                    <button type="submit" form="advanced-settings-form">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </details>
+</div>
+
+
+<div class="content-card">
+    <h2>Авто-режим</h2>
+    <div class="auto-mode-controls">
+        {% if auto_mode_status == 'active' %}
+            <p style="color: var(--success-color); font-weight: 500;">Авто-режим <strong>активен</strong>.</p>
+            <form action="{{ url_for('stop_auto_mode', chat_id=chat_id) }}" method="post" style="display: inline;">
+                <button type="submit" class="button-danger">Остановить авто-режим</button>
+            </form>
+        {% elif auto_mode_status == 'stopping' %}
+            <p style="color: var(--warning-color); font-weight: 500;">Авто-режим <strong>останавливается...</strong></p>
+            <button type="button" disabled>Остановить авто-режим</button> {# Делаем кнопку неактивной во время остановки #}
+        {% else %} {# inactive or None #}
+             <p style="color: var(--secondary-color);">Авто-режим <strong>неактивен</strong>.</p>
+             <form action="{{ url_for('start_auto_mode', chat_id=chat_id) }}" method="post" style="display: inline;">
+                 <button type="submit" class="button-success">Включить авто-режим</button>
+             </form>
+        {% endif %}
+    </div>
+    <small style="display: block; margin-top: 10px;">Авто-режим будет проверять новые сообщения, генерировать и отправлять ответы согласно заданным правилам.</small>
+</div>
+
+
+{% if generated_reply %}
+<div class="content-card generated-reply-section">
+    <h2>Сгенерированный ответ:</h2>
+    <form action="{{ url_for('send_reply', chat_id=chat_id) }}" method="post">
+        <div class="form-group">
+            <textarea name="message_to_send" rows="6" required>{{ generated_reply }}</textarea>
+        </div>
+        <button type="submit">Отправить в Telegram</button>
+    </form>
+</div> 
+{% endif %}
+
+<div class="back-link-container"> 
+    <a href="{{ url_for('index') }}">← Назад к выбору чата</a> 
+</div>
+
+<script>
+    function handleStickerCopy() {
+        const copyBtn = document.getElementById('copy-sticker-prompt-btn');
+        if (!copyBtn) return;
+
+        const stickerPromptText = copyBtn.dataset.stickerPrompt;
+
+        
+        if (!stickerPromptText || stickerPromptText.trim() === '') {
+            copyBtn.disabled = true;
+            copyBtn.title = "Нет активных стикеров для создания промпта";
+            return; 
+        }
+        
+
+        
+        copyBtn.addEventListener('click', () => {
+             navigator.clipboard.writeText(stickerPromptText).then(() => {
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✅ Скопировано!';
+                copyBtn.disabled = true;
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.disabled = false;
+                }, 2000);
+            }).catch(err => {
+                console.error('Ошибка копирования: ', err);
+                
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '❌ Ошибка!';
+                copyBtn.disabled = true;
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.disabled = false;
+                }, 2500);
+                
+            });
+        });
+    }
+    
+    // Функция для обработки спиннера загрузки
+    function setupLoadingSpinners() {
+        // Находим ВСЕ кнопки генерации на странице
+        const generateButtons = document.querySelectorAll('.generate-button');
+        
+        generateButtons.forEach(button => {
+            // У каждой кнопки ищем ближайшую форму
+            const form = button.closest('form');
+            if (form) {
+                form.addEventListener('submit', function() {
+                    button.disabled = true;
+                    // Можно добавить спиннер рядом с кнопкой, если он есть в HTML
+                });
+            }
+        });
+    }
+
+    // Запускаем наши функции, когда страница полностью загружена
+    document.addEventListener('DOMContentLoaded', (event) => {
+        handleStickerCopy();
+        setupLoadingSpinners();
+    });
+
+    // Обработка восстановления страницы из кеша браузера (кнопка "Назад")
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            const generateButtons = document.querySelectorAll('.generate-button');
+            generateButtons.forEach(button => {
+                if (button.disabled) {
+                    button.disabled = false;
+                }
+            });
+        }
+    });
+</script>
+
+{% endblock %}

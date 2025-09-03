@@ -1,0 +1,796 @@
+:root {
+    --bg-gradient-start: #fffdf6; 
+    --bg-gradient-end: #fff9e6;   
+    --card-bg-color: #ffffff;
+    --text-color: #5d4037; 
+    --heading-color: #4e342e; 
+
+    --primary-accent-color: #ffab40; 
+    --primary-accent-hover: #ff9100;
+
+    --button-primary-bg: #ff6b6b; 
+    --button-primary-hover: #ff4f4f;
+    --button-primary-text: #ffffff;
+
+    --button-secondary-bg: #ffffff; 
+    --button-secondary-hover: #ffca28;
+    --button-secondary-text: var(--text-color);
+
+    --border-color: #ede7d9; 
+    --input-focus-border: var(--primary-accent-color);
+    --input-focus-shadow: rgba(255, 171, 64, 0.3); 
+
+    --user-message-bg: #c8e6c9; 
+    --user-message-text: #2e7d32;
+    --model-message-bg: #fff9c4; 
+    --model-message-text: #795548; 
+
+    --success-bg: #dcedc8; --success-text: #33691e; --success-border: #c5e1a5;
+    --error-bg: #ffcdd2;   --error-text: #b71c1c;   --error-border: #ef9a9a;
+    --warning-bg: #fff9c4; --warning-text: #827717; --warning-border: #fff59d;
+    --info-bg: #b3e5fc;    --info-text: #01579b;    --info-border: #81d4fa;
+
+    --border-radius-large: 16px; 
+    --border-radius-medium: 12px;
+    --border-radius-small: 8px;
+    --box-shadow: 0 5px 20px rgba(184, 161, 111, 0.15); 
+    --box-shadow-hover: 0 8px 25px rgba(184, 161, 111, 0.2);
+    --font-family: 'Poppins', sans-serif;
+}
+
+body {
+    font-family: var(--font-family);
+    margin: 0;
+    padding: 40px 20px; 
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    color: var(--text-color);
+    line-height: 1.7; 
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 850px;
+    margin: auto;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.content-card {
+    background: var(--card-bg-color);
+    padding: 30px 35px; 
+    border-radius: var(--border-radius-large);
+    box-shadow: var(--box-shadow);
+    margin-bottom: 30px;
+    transition: box-shadow 0.3s ease-in-out, transform 0.3s ease-in-out;
+    border: 1px solid var(--border-color);
+}
+.content-card:hover {
+    box-shadow: var(--box-shadow-hover);
+    transform: translateY(-3px); 
+}
+
+h1, h2, h3 {
+    color: var(--heading-color);
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 1.2rem;
+}
+h1 { font-size: 2em; margin-bottom: 1.8rem; text-align: center; font-weight: 700; }
+h2 { font-size: 1.5em; margin-bottom: 1.5rem; padding-bottom: 0.6rem; border-bottom: 2px dashed var(--border-color); }
+
+a {
+    color: var(--button-primary-bg); 
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+a:hover {
+    color: var(--button-primary-hover);
+    text-decoration: underline;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 30px 0;
+}
+
+.form-group {
+    margin-bottom: 1.8rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600; 
+    color: var(--text-color);
+    font-size: 1em;
+}
+
+textarea,
+input[type="text"],
+input[type="number"],
+select {
+    width: 100%;
+    padding: 14px 18px;
+    margin-bottom: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium); 
+    box-sizing: border-box;
+    font-family: var(--font-family);
+    font-size: 1em;
+    background-color: #fff; 
+    color: var(--text-color);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+textarea:focus,
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus {
+    outline: none;
+    border-color: var(--input-focus-border);
+    box-shadow: 0 0 0 4px var(--input-focus-shadow); 
+}
+
+textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+select {
+    appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FF8A65%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); 
+    background-repeat: no-repeat;
+    background-position: right 18px center;
+    background-size: 12px 12px;
+    padding-right: 45px;
+}
+
+button {
+    padding: 14px 25px; 
+    border: none;
+    border-radius: var(--border-radius-medium);
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600; 
+    transition: background-color 0.3s ease, transform 0.1s ease, box-shadow 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+    text-transform: uppercase; 
+    letter-spacing: 0.5px;
+}
+button:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px); 
+}
+button:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+}
+
+button[type="submit"],
+#generate-button
+{
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-text);
+}
+button[type="submit"]:hover:not(:disabled),
+#generate-button:hover:not(:disabled)
+ {
+    background-color: var(--button-primary-hover);
+}
+button[type="submit"]:disabled,
+#generate-button:disabled {
+     background-color: var(--button-primary-bg); 
+}
+
+.update-history-form button,
+form[action*="save_prompt"] button
+{
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    padding: 10px 20px; 
+    font-size: 0.9em;
+}
+
+.update-history-form button:hover,
+form[action*="save_prompt"] button:hover
+{
+    background-color: var(--button-secondary-hover);
+}
+
+.sticker-controls {
+    margin: 20px 0;
+    padding: 20px 25px;
+    background-color: var(--bg-gradient-end);
+    border-radius: var(--border-radius-medium);
+    border: 1px solid var(--border-color);
+}
+.sticker-controls h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.2em;
+    color: var(--heading-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.8rem;
+}
+
+.sticker-dropdown {
+    margin-bottom: 1rem;
+}
+.sticker-dropdown summary {
+    cursor: pointer;
+    font-weight: 500;
+    padding: 10px 15px;
+    background-color: var(--card-bg-color);
+    border-radius: var(--border-radius-small);
+    border: 1px solid var(--border-color);
+    transition: background-color 0.2s;
+    list-style: none; 
+    position: relative;
+    padding-right: 30px;
+}
+.sticker-dropdown summary::after { 
+    content: '▼';
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8em;
+    color: var(--primary-accent-color);
+    transition: transform 0.3s;
+}
+.sticker-dropdown[open] > summary::after {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.sticker-dropdown summary:hover {
+    background-color: #fcf8f0;
+}
+
+.sticker-list {
+    margin-top: 10px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: var(--border-radius-small);
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    max-height: 200px;
+    overflow-y: auto;
+}
+.sticker-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: var(--border-radius-small);
+}
+.sticker-item:hover {
+    background-color: var(--card-bg-color);
+}
+.sticker-item input[type="checkbox"] {
+    margin-right: 12px;
+    width: auto;
+    height: auto;
+    transform: scale(1.2);
+    accent-color: var(--button-primary-bg);
+}
+.sticker-item span {
+    font-weight: 500;
+}
+
+.sticker-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 1.2rem;
+}
+
+.sticker-controls button {
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    padding: 10px 20px; 
+    font-size: 0.9em;
+}
+.sticker-controls button:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover);
+}
+
+#copy-sticker-prompt-btn {
+    background-color: var(--primary-accent-color);
+    color: var(--card-bg-color);
+}
+#copy-sticker-prompt-btn:hover:not(:disabled) {
+    background-color: var(--primary-accent-hover);
+}
+
+.advanced-settings-details {
+    background: transparent;
+    border: none;
+    margin-top: 20px;
+}
+
+.advanced-settings-details > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    font-size: 1.15em;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--heading-color);
+    background-color: var(--card-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    list-style: none; /* Убирает стандартный маркер */
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.advanced-settings-details > summary:hover {
+    background-color: #fffaf0;
+}
+
+.advanced-settings-details[open] > summary {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom-color: transparent;
+    box-shadow: var(--box-shadow);
+}
+
+.advanced-settings-details > summary::-webkit-details-marker {
+    display: none; /* Убирает маркер в Chrome/Safari */
+}
+
+.advanced-settings-details > summary::after {
+    content: '▶';
+    font-size: 0.8em;
+    color: var(--primary-accent-color);
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transform: rotate(0deg);
+}
+
+.advanced-settings-details[open] > summary::after {
+    transform: rotate(90deg);
+}
+
+.summary-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.summary-icon {
+    font-size: 1.2em;
+    transform: translateY(-1px);
+}
+
+
+.settings-content-wrapper {
+    padding: 25px 30px;
+    background-color: var(--bg-gradient-end);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-bottom-left-radius: var(--border-radius-medium);
+    border-bottom-right-radius: var(--border-radius-medium);
+    animation: fadeIn 0.4s ease forwards;
+}
+
+.settings-description {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 1px dashed var(--border-color);
+    font-size: 0.95em;
+    opacity: 0.9;
+}
+
+.advanced-settings-details h4 {
+    font-size: 1.05em;
+    color: var(--heading-color);
+    margin-top: 2rem;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+}
+.advanced-settings-details h4:first-of-type {
+    margin-top: 0;
+}
+
+.advanced-settings-details .form-row {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.advanced-settings-details .form-row > .form-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.advanced-settings-details label {
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.advanced-settings-details small {
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.7;
+    margin-top: 4px;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 15px;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+}
+.settings-actions .reset-form {
+    margin: 0; /* Убираем лишние отступы у формы */
+}
+/* Стили для кнопок в этом блоке */
+.settings-actions button[type="submit"] {
+    background-color: var(--primary-accent-color);
+}
+.settings-actions button[type="submit"]:hover:not(:disabled) {
+    background-color: var(--primary-accent-hover);
+}
+.settings-actions .button-secondary {
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+}
+.settings-actions .button-secondary:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover);
+}
+
+small {
+    font-size: 0.9em;
+    color: var(--text-color);
+    opacity: 0.8;
+    margin-top: 8px;
+    display: block;
+}
+
+.flash-messages {
+    margin-bottom: 25px;
+}
+.alert {
+    padding: 15px 20px;
+    margin-bottom: 15px;
+    border-radius: var(--border-radius-medium);
+    border: 1px solid transparent;
+    font-size: 1em;
+    animation: fadeIn 0.5s ease forwards;
+    font-weight: 500;
+}
+.alert-error   { background-color: var(--error-bg);   color: var(--error-text);   border-color: var(--error-border); }
+.alert-success { background-color: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+.alert-warning { background-color: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
+.alert-info    { background-color: var(--info-bg);    color: var(--info-text);    border-color: var(--info-border); }
+
+#chat_id {
+    margin-bottom: 2rem;
+}
+
+
+.chat-id-display {
+    text-align: center;
+    margin-top: -1.5rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.7;
+}
+
+
+.update-history-form form {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+    background-color: var(--bg-gradient-end); 
+    padding: 15px 20px;
+    border-radius: var(--border-radius-medium);
+}
+.update-history-form label {
+    margin-bottom: 0;
+    font-weight: 500;
+}
+.update-history-form input[type="number"] {
+    width: 90px;
+    padding: 10px 12px;
+    margin-bottom: 0;
+}
+
+.chat-history {
+    border: none;
+    padding: 20px;
+    margin-bottom: 25px;
+    max-height: 550px;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: var(--border-radius-medium);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.message {
+    padding: 12px 18px;
+    border-radius: var(--border-radius-large); 
+    max-width: 78%;
+    word-wrap: break-word;
+    position: relative;
+    opacity: 0;
+    animation: slideInUp 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; 
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+    line-height: 1.6;
+}
+
+.message pre {
+    white-space: pre-wrap;
+    margin: 0;
+    font-size: 1em;
+    font-family: var(--font-family);
+}
+
+.message.user {
+    background-color: var(--user-message-bg);
+    color: var(--user-message-text);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+    margin-right: auto;
+}
+
+.message.model {
+    background-color: var(--model-message-bg);
+    color: var(--model-message-text);
+    align-self: flex-end;
+    border-bottom-right-radius: 4px; 
+    margin-left: auto;
+}
+
+#generate-form {
+    position: relative;
+}
+
+.loading-spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3); 
+    border-left-color: var(--button-primary-text);
+    border-radius: 50%;
+    width: 20px; 
+    height: 20px;
+    animation: spin 1s linear infinite;
+    display: none;
+    margin-left: 10px;
+}
+
+.generated-reply-section textarea {
+    background-color: var(--bg-gradient-end); 
+    min-height: 140px;
+    border-color: var(--primary-accent-color); 
+}
+
+.back-link-container {
+    text-align: center;
+    margin-top: 30px;
+}
+.back-link-container a {
+    font-weight: 600;
+    font-size: 1.1em;
+    padding: 8px 15px;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: var(--border-radius-medium);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.back-link-container a:hover {
+    background: #fff;
+    text-decoration: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInUp {
+    from { opacity: 0; transform: translateY(25px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.message:nth-child(1) { animation-delay: 0.05s; }
+.message:nth-child(2) { animation-delay: 0.12s; }
+.message:nth-child(3) { animation-delay: 0.19s; }
+.message:nth-child(4) { animation-delay: 0.26s; }
+.message:nth-child(5) { animation-delay: 0.33s; }
+
+@media (max-width: 768px) {
+    h1 { font-size: 1.8em; }
+    h2 { font-size: 1.4em; }
+    .content-card { padding: 25px 20px; }
+    button { padding: 12px 20px; }
+}
+
+@media (max-width: 600px) {
+    body { padding: 25px 15px; }
+    h1 { font-size: 1.6em; }
+    h2 { font-size: 1.3em; }
+    .content-card { padding: 20px 15px; border-radius: var(--border-radius-medium);}
+    .message { max-width: 88%; padding: 10px 15px; border-radius: var(--border-radius-medium); }
+    .message.user { border-bottom-left-radius: 4px; }
+    .message.model { border-bottom-right-radius: 4px; }
+    .update-history-form form { padding: 10px 15px; gap: 10px;}
+    button { padding: 12px 18px; font-size: 0.95em; }
+    .back-link-container a { font-size: 1em; }
+}
+
+/* --- Общий заголовок блока генерации и переключатель --- */
+.generation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid var(--border-color);
+}
+.generation-header h2 {
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Форма-контейнер для кнопок-переключателей */
+.mode-switcher-form {
+    display: flex;
+    background-color: var(--bg-gradient-end);
+    border-radius: var(--border-radius-medium);
+    padding: 5px;
+    border: 1px solid var(--border-color);
+}
+
+.switch-button {
+    border: none;
+    padding: 10px 20px;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    background-color: transparent;
+    color: var(--text-color);
+    border-radius: var(--border-radius-small);
+    transition: all 0.3s ease;
+    box-shadow: none;
+}
+.switch-button:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+    transform: none; /* Отключаем прыжок при наведении */
+}
+.switch-button.active {
+    background-color: var(--card-bg-color);
+    color: var(--primary-accent-color);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+}
+
+/* --- Общие стили для секций в режиме персонажа --- */
+.character-management-section,
+.character-editor-section,
+.character-actions-section {
+    padding: 20px;
+    margin-top: 25px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    background-color: var(--bg-gradient-start);
+}
+.character-management-section h4,
+.character-editor-section h4,
+.character-actions-section h4 {
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-size: 1.2em;
+    color: var(--heading-color);
+    padding-bottom: 0.8rem;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+/* --- Цветовое кодирование полей ввода --- */
+.prompt-field {
+    border-left-width: 5px;
+    padding-left: 20px;
+}
+.personality-field {
+    border-left-color: #81d4fa; /* info */
+    background-color: #f0f9ff;
+}
+.memory-field {
+    border-left-color: #c5e1a5; /* success */
+    background-color: #f7fcf2;
+}
+.system-field {
+    border-left-color: #fff59d; /* warning */
+    background-color: #fffef6;
+}
+.memory-update-field {
+    border-left-color: #ef9a9a; /* error */
+    background-color: #fff6f6;
+}
+
+/* Улучшенная кнопка создания персонажа */
+.character-creator button.button-success {
+    background-color: #4CAF50; /* Зеленый */
+    width: 100%;
+}
+.character-creator button.button-success:hover:not(:disabled) {
+    background-color: #45a049;
+}
+.button-save-character {
+    width: 100%;
+    padding: 16px !important;
+    font-size: 1.1em !important;
+    background-color: var(--primary-accent-color) !important;
+}
+.button-save-character:hover:not(:disabled) {
+    background-color: var(--primary-accent-hover) !important;
+}
+
+/* --- Контейнер для кнопок в режиме "Промпт" --- */
+.form-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-top: 15px;
+}
+.inline-form {
+    display: inline;
+    margin: 0;
+}
+.button-secondary {
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    border: 1px solid var(--border-color);
+}
+.button-secondary:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover);
+}
+
+/* Обновление старых стилей для лучшего сочетания */
+.character-management {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 20px;
+    margin-bottom: 0; /* Убираем нижний отступ, т.к. секция теперь имеет свой */
+}
+.character-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 20px;
+    margin-top: 0;
+    padding-top: 0;
+    border: none;
+}
+.character-actions form {
+    flex: 1;
+    min-width: 200px;
+}
+.character-actions form:last-child {
+    flex-grow: 0; /* Не растягивать кнопку "Добавить в память" */
+}

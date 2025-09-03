@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Выбор чата{% endblock %}
+
+{% block content %}
+<div class="content-card"> 
+    <h1>Выберите чат для взаимодействия</h1>
+
+    {% if error %}
+        
+    {% endif %}
+
+    {% if chats %}
+        <form action="{{ url_for('select_chat') }}" method="post">
+            <div class="form-group">
+                <label for="chat_id">Доступные чаты:</label> 
+                <select name="chat_id" id="chat_id" required>
+                    <option value="" disabled selected>-- Выберите чат --</option>
+                    {% for chat in chats %}
+                        <option value="{{ chat.id }}">{{ chat.name }} (ID: {{ chat.id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit">Перейти в чат</button> 
+        </form>
+    {% else %}
+         {% if not error %} 
+        <p>Чаты не найдены. Убедитесь, что в вашем аккаунте Telegram есть диалоги.</p>
+        <p><small>Возможно, требуется войти в аккаунт Telegram через консоль при первом запуске.</small></p>
+        {% endif %}
+    {% endif %}
+</div> 
+{% endblock %}
