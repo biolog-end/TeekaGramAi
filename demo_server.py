@@ -198,42 +198,6 @@ def stop_auto_mode(chat_id):
     flash('Авто-режим остановлен в демо-версии!', 'info')
     return redirect(url_for('chat_page', chat_id=chat_id))
 
-# Дополнительные mock routes
-@app.route('/save_prompt/<sint:chat_id>', methods=['POST'])
-def save_prompt(chat_id):
-    flash('Промпт сохранен в демо-режиме!', 'success')
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
-@app.route('/set_active_character/<sint:chat_id>', methods=['POST'])
-def set_active_character(chat_id):
-    flash('Персонаж выбран в демо-режиме!', 'success')
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
-@app.route('/create_character', methods=['POST'])
-def create_character():
-    flash('Персонаж создан в демо-режиме!', 'success')
-    return redirect(url_for('index'))
-
-@app.route('/save_character/<character_id>', methods=['POST'])
-def save_character(character_id):
-    flash('Данные персонажа сохранены в демо-режиме!', 'success')
-    return redirect(url_for('index'))
-
-@app.route('/update_memory/<sint:chat_id>', methods=['POST'])
-def update_memory_route(chat_id):
-    flash('Память персонажа обновлена в демо-режиме!', 'success')
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
-@app.route('/update_sticker/<sint:chat_id>', methods=['POST'])
-def update_sticker_status(chat_id):
-    flash('Статусы стикеров обновлены в демо-режиме!', 'success')
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
-@app.route('/reset_settings/<sint:chat_id>', methods=['POST'])
-def reset_chat_settings_route(chat_id):
-    flash('Настройки сброшены к значениям по умолчанию!', 'info')
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
 if __name__ == '__main__':
     print("🚀 Запуск TeekaGramAi в демонстрационном режиме...")
     print("📱 Веб-интерфейс будет доступен по адресу: http://0.0.0.0:5000")
