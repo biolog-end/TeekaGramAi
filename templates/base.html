@@ -3,19 +3,71 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>{% block title %}Telegram AI Assistant{% endblock %}</title>
+    <meta name="description" content="TeekaGramAi - Автономная нейросетевая переписка в Telegram с искусственным интеллектом">
+    <meta name="keywords" content="telegram, ai, chatbot, нейросеть, автономная переписка, искусственный интеллект">
+    <meta name="author" content="TeekaGramAi">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="{% block og_title %}TeekaGramAi - AI Telegram Assistant{% endblock %}">
+    <meta property="og:description" content="Автономная нейросетевая переписка в Telegram">
+    <meta property="og:type" content="website">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    
+    <title>{% block title %}TeekaGramAi - Telegram AI Assistant{% endblock %}</title>
+    
+    <!-- Шрифты -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Основные стили -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
+    <!-- Навигация -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="{{ url_for('index') }}" class="brand-link">
+                    <i class="fas fa-robot"></i>
+                    <span>TeekaGramAi</span>
+                </a>
+            </div>
+            <div class="nav-menu">
+                {% if request.endpoint == 'chat_page' %}
+                    <a href="{{ url_for('index') }}" class="nav-link">
+                        <i class="fas fa-home"></i>
+                        <span>Главная</span>
+                    </a>
+                {% endif %}
+                <div class="nav-status">
+                    <div class="status-indicator status-online" title="Система активна"></div>
+                    <span class="status-text">Онлайн</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
+        <!-- Flash сообщения -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                    <div class="alert alert-{{ category }} fade-in">
+                        <i class="fas fa-{% if category == 'success' %}check-circle{% elif category == 'error' %}exclamation-triangle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}"></i>
+                        {{ message }}
+                        <button type="button" class="alert-close" onclick="this.parentElement.remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
                 {% endfor %}
                 </div>
             {% endif %}
@@ -23,5 +75,112 @@
 
         {% block content %}{% endblock %}
     </div>
+
+    <!-- Подвал -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4><i class="fas fa-robot"></i> TeekaGramAi</h4>
+                <p>Автономная нейросетевая переписка в Telegram</p>
+            </div>
+            <div class="footer-section">
+                <h4><i class="fas fa-cog"></i> Технологии</h4>
+                <ul>
+                    <li><i class="fab fa-python"></i> Python</li>
+                    <li><i class="fas fa-brain"></i> AI/ML</li>
+                    <li><i class="fab fa-telegram"></i> Telegram API</li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4><i class="fas fa-info-circle"></i> Информация</h4>
+                <ul>
+                    <li><i class="fas fa-shield-alt"></i> Безопасность</li>
+                    <li><i class="fas fa-lock"></i> Конфиденциальность</li>
+                    <li><i class="fas fa-question-circle"></i> Поддержка</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 TeekaGramAi. Создано с ❤️ для автоматизации общения</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script>
+        // Анимации при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            // Добавляем класс для анимаций
+            const cards = document.querySelectorAll('.content-card');
+            cards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.classList.add('fade-in');
+                }, index * 150);
+            });
+
+            // Автоматическое скрытие уведомлений
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                if (!alert.classList.contains('alert-error')) {
+                    setTimeout(() => {
+                        alert.style.opacity = '0';
+                        alert.style.transform = 'translateY(-20px)';
+                        setTimeout(() => alert.remove(), 300);
+                    }, 5000);
+                }
+            });
+
+            // Улучшенная обработка форм
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+                        submitButton.disabled = true;
+                    }
+                });
+            });
+
+            // Улучшенные tooltips
+            const tooltips = document.querySelectorAll('.tooltip');
+            tooltips.forEach(tooltip => {
+                tooltip.addEventListener('mouseenter', function() {
+                    this.classList.add('tooltip-active');
+                });
+                tooltip.addEventListener('mouseleave', function() {
+                    this.classList.remove('tooltip-active');
+                });
+            });
+        });
+
+        // Функция для показа уведомлений
+        function showNotification(message, type = 'info') {
+            const container = document.querySelector('.flash-messages') || document.querySelector('.container');
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} fade-in`;
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'}"></i>
+                ${message}
+                <button type="button" class="alert-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.insertBefore(notification, container.firstChild);
+            
+            if (type !== 'error') {
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    notification.style.transform = 'translateY(-20px)';
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+        }
+
+        // Обработка ошибок сети
+        window.addEventListener('online', () => showNotification('Соединение восстановлено', 'success'));
+        window.addEventListener('offline', () => showNotification('Потеряно соединение с интернетом', 'warning'));
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

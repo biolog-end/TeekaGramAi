@@ -1,33 +1,199 @@
 {% extends "base.html" %}
 
-{% block title %}Выбор чата{% endblock %}
+{% block title %}TeekaGramAi - Главная{% endblock %}
 
 {% block content %}
-<div class="content-card"> 
-    <h1>Выберите чат для взаимодействия</h1>
+<!-- Главный логотип и заголовок -->
+<div class="hero-section">
+    <div class="logo">
+        <h1 class="logo-text">TeekaGramAi</h1>
+        <p class="logo-subtitle">Intelligent Telegram Automation</p>
+    </div>
+    
+    <div class="hero-description">
+        <p class="hero-text">
+            <i class="fas fa-robot"></i>
+            Автономная нейросетевая переписка в Telegram с использованием искусственного интеллекта
+        </p>
+        <div class="features-grid">
+            <div class="feature-card">
+                <i class="fas fa-brain"></i>
+                <h3>ИИ Общение</h3>
+                <p>Умная генерация ответов</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-cog"></i>
+                <h3>Автоматизация</h3>
+                <p>Автономная работа 24/7</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-shield-alt"></i>
+                <h3>Безопасность</h3>
+                <p>Защищенное соединение</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="content-card main-card"> 
+    <h2><i class="fas fa-comments"></i> Выберите чат для взаимодействия</h2>
 
     {% if error %}
-        
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-triangle"></i>
+            {{ error }}
+        </div>
     {% endif %}
 
     {% if chats %}
-        <form action="{{ url_for('select_chat') }}" method="post">
+        <form action="{{ url_for('select_chat') }}" method="post" class="chat-selection-form">
             <div class="form-group">
-                <label for="chat_id">Доступные чаты:</label> 
-                <select name="chat_id" id="chat_id" required>
-                    <option value="" disabled selected>-- Выберите чат --</option>
-                    {% for chat in chats %}
-                        <option value="{{ chat.id }}">{{ chat.name }} (ID: {{ chat.id }})</option>
-                    {% endfor %}
-                </select>
+                <label for="chat_id">
+                    <i class="fas fa-list"></i>
+                    Доступные чаты ({{ chats|length }}):
+                </label> 
+                <div class="select-wrapper">
+                    <select name="chat_id" id="chat_id" required>
+                        <option value="" disabled selected>
+                            <i class="fas fa-search"></i>
+                            -- Выберите чат --
+                        </option>
+                        {% for chat in chats %}
+                            <option value="{{ chat.id }}" data-type="{{ 'group' if chat.id < 0 else 'user' }}">
+                                {% if chat.id < 0 %}
+                                    <i class="fas fa-users"></i>
+                                {% else %}
+                                    <i class="fas fa-user"></i>
+                                {% endif %}
+                                {{ chat.name }} (ID: {{ chat.id }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <i class="fas fa-chevron-down select-arrow"></i>
+                </div>
             </div>
-            <button type="submit">Перейти в чат</button> 
+            
+            <div class="form-actions">
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-arrow-right"></i>
+                    Перейти в чат
+                </button>
+            </div>
         </form>
+
+        <div class="info-section">
+            <div class="info-card">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <h4>Как это работает</h4>
+                    <ol>
+                        <li>Выберите чат из списка доступных диалогов</li>
+                        <li>Настройте параметры ИИ и автоматизации</li>
+                        <li>Запустите автономный режим общения</li>
+                        <li>Наблюдайте за интеллектуальными ответами</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
     {% else %}
-         {% if not error %} 
-        <p>Чаты не найдены. Убедитесь, что в вашем аккаунте Telegram есть диалоги.</p>
-        <p><small>Возможно, требуется войти в аккаунт Telegram через консоль при первом запуске.</small></p>
+        {% if not error %}
+            <div class="empty-state">
+                <i class="fas fa-comments-slash"></i>
+                <h3>Чаты не найдены</h3>
+                <p>Убедитесь, что в вашем аккаунте Telegram есть активные диалоги.</p>
+                
+                <div class="help-section">
+                    <div class="help-card">
+                        <i class="fas fa-question-circle"></i>
+                        <div>
+                            <h4>Первый запуск?</h4>
+                            <p>Возможно, требуется войти в аккаунт Telegram через консоль при первом запуске приложения.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="help-card">
+                        <i class="fas fa-terminal"></i>
+                        <div>
+                            <h4>Проверьте консоль</h4>
+                            <p>Откройте терминал и проверьте вывод приложения для получения инструкций по авторизации.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-secondary" onclick="window.location.reload()">
+                    <i class="fas fa-refresh"></i>
+                    Обновить список чатов
+                </button>
+            </div>
         {% endif %}
     {% endif %}
-</div> 
+</div>
+
+<!-- Статистика -->
+<div class="stats-section">
+    <div class="stats-grid">
+        <div class="stat-card">
+            <i class="fas fa-comments"></i>
+            <div class="stat-number">{{ chats|length if chats else 0 }}</div>
+            <div class="stat-label">Доступных чатов</div>
+        </div>
+        <div class="stat-card">
+            <i class="fas fa-robot"></i>
+            <div class="stat-number">24/7</div>
+            <div class="stat-label">Режим работы</div>
+        </div>
+        <div class="stat-card">
+            <i class="fas fa-brain"></i>
+            <div class="stat-number">AI</div>
+            <div class="stat-label">Технология</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Анимация появления карточек функций
+    const featureCards = document.querySelectorAll('.feature-card');
+    featureCards.forEach((card, index) => {
+        setTimeout(() => {
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+        }, 200 * (index + 1));
+    });
+
+    // Анимация статистики
+    const statNumbers = document.querySelectorAll('.stat-number');
+    statNumbers.forEach(stat => {
+        const finalValue = stat.textContent;
+        if (!isNaN(finalValue)) {
+            let currentValue = 0;
+            const increment = finalValue / 50;
+            const timer = setInterval(() => {
+                currentValue += increment;
+                if (currentValue >= finalValue) {
+                    stat.textContent = finalValue;
+                    clearInterval(timer);
+                } else {
+                    stat.textContent = Math.floor(currentValue);
+                }
+            }, 30);
+        }
+    });
+
+    // Улучшенный select
+    const select = document.getElementById('chat_id');
+    if (select) {
+        select.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const isGroup = selectedOption.dataset.type === 'group';
+            
+            if (isGroup) {
+                showNotification('Выбран групповой чат. Убедитесь, что бот имеет права администратора.', 'info');
+            }
+        });
+    }
+});
+</script>
 {% endblock %}
