@@ -74,6 +74,11 @@ DEFAULT_CHAT_SETTINGS = {
     # Общие
     "num_messages_to_fetch": 65,
     "add_chat_name_prefix": True,
+    # Для медиа
+    "can_see_photos": True,
+    "can_see_videos": True,
+    "can_see_audio": True,
+    "can_see_files_pdf": True,
     # Для Auto-Mode
     "auto_mode_check_interval": 3.5,
     "auto_mode_initial_wait": 6.0,
@@ -481,18 +486,15 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
         base_chat_settings = get_chat_settings(chat_id)
         settings_for_generation = base_chat_settings.copy() 
 
-
         generation_mode = base_chat_settings.get('generation_mode')
+        
         if generation_mode == 'character':
             character_id = base_chat_settings.get('active_character_id')
             if character_id:
                 character_data = character_utils.get_character(character_id)
                 if character_data and character_data.get('advanced_settings'):
-                    logging.debug(f"[{worker_name}] Обновление рабочих настроек из персонажа.")
-                    temp_settings = DEFAULT_CHAT_SETTINGS.copy()
-                    temp_settings.update(character_data['advanced_settings'])
-                    settings_for_generation = temp_settings
-        
+                    logging.debug(f"[{worker_name}] Применяются персональные настройки поверх настроек чата.")
+                    settings_for_generation.update(character_data['advanced_settings'])
         
         check_interval = settings_for_generation.get('auto_mode_check_interval', DEFAULT_CHAT_SETTINGS['auto_mode_check_interval'])
 
@@ -506,7 +508,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
             should_generate = False
             is_timeout_trigger = False
             
-            history_check, error_check = run_in_telegram_loop(get_formatted_history(chat_id, limit=2))
+            history_check, error_check = run_in_telegram_loop(get_formatted_history(chat_id, limit=2, settings=settings_for_generation))
 
             if error_check:
                 logging.error(f"[{worker_name}] Ошибка получения истории для проверки: {error_check}. Пауза 30 сек.")
@@ -530,7 +532,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                 stop_event.wait(initial_wait_s)
                 if stop_event.is_set(): break
                 
-                history_after_wait, error_after_wait = run_in_telegram_loop(get_formatted_history(chat_id, limit=2))
+                history_after_wait, error_after_wait = run_in_telegram_loop(get_formatted_history(chat_id, limit=2, settings=settings_for_generation))
                 if error_after_wait or not history_after_wait:
                     logging.warning(f"[{worker_name}] Не удалось перепроверить историю. Пропуск цикла.")
                 else:
@@ -596,7 +598,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                     final_system_prompt += f"\n\n{no_reply_suffix}"
 
                 num_messages = settings_for_generation.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
-                full_history, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=num_messages))
+                full_history, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=num_messages, settings=settings_for_generation))
 
                 if history_error or not full_history:
                     logging.error(f"[{worker_name}] Ошибка получения истории для генерации: {history_error}. Пропуск.")
@@ -792,7 +794,7 @@ def generate_reply(chat_id):
             chat_info_data, info_error = run_in_telegram_loop(get_chat_info(chat_id))
             if info_error: logging.warning(f"Ошибка получения инфо о чате {chat_id} при ошибке Gemini: {info_error}")
             elif chat_info_data: session['chat_info'] = chat_info_data
-        history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit))
+        history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_for_generation))
         if history_error: logging.error(f"Ошибка истории при ошибке Gemini: {history_error}")
         return render_template(
             'chat.html',
@@ -811,7 +813,7 @@ def generate_reply(chat_id):
     model_name_input = request.form.get('model_name', '').strip()
     model_name_to_use = model_name_input if model_name_input else BASE_GEMENI_MODEL
     logging.info(f"Получение истории для генерации (чат {chat_id}, лимит: {current_limit})")
-    history_data, history_error_for_render = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit))
+    history_data, history_error_for_render = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_for_generation))
     chat_info_data = session.get('chat_info')
     if not chat_info_data:
         chat_info_data, _ = run_in_telegram_loop(get_chat_info(chat_id))
@@ -981,7 +983,7 @@ def chat_page(chat_id):
     session[f'auto_mode_status_{chat_id}'] = auto_mode_status
 
     logging.info(f"Запрос истории для чата {chat_id}")
-    history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit))
+    history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_to_use))
     if history_error:
         logging.error(f"Ошибка получения истории для чата {chat_id}: {history_error}")
 
@@ -1180,6 +1182,10 @@ def save_chat_settings_route(chat_id):
     settings_data = {}
     try:
         # Сначала собираем все данные из формы в словарь
+        settings_data['can_see_photos'] = 'can_see_photos' in request.form
+        settings_data['can_see_videos'] = 'can_see_videos' in request.form
+        settings_data['can_see_audio'] = 'can_see_audio' in request.form
+        settings_data['can_see_files_pdf'] = 'can_see_files_pdf' in request.form
         settings_data['add_chat_name_prefix'] = 'add_chat_name_prefix' in request.form
         settings_data['num_messages_to_fetch'] = int(request.form.get('num_messages_to_fetch'))
         settings_data['auto_mode_check_interval'] = float(request.form.get('auto_mode_check_interval'))
@@ -1344,32 +1350,23 @@ def update_memory_route(chat_id):
         flash("Не выбран персонаж для обновления памяти.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-
-    # 1. Получаем данные персонажа, чтобы получить доступ к его настройкам
     active_character_data = character_utils.get_character(character_id)
     if not active_character_data:
         flash(f"Не найдены данные для персонажа ID {character_id}.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # 2. Определяем, какие настройки использовать (персонажа или чата)
-    settings_to_use = chat_settings # По умолчанию настройки чата
+    settings_to_use = chat_settings 
     if active_character_data.get('advanced_settings'):
-        # Если у персонажа есть свои настройки, они имеют приоритет.
-        # Объединяем их с дефолтными для полноты.
+
         char_adv_settings = DEFAULT_CHAT_SETTINGS.copy()
         char_adv_settings.update(active_character_data['advanced_settings'])
         settings_to_use = char_adv_settings
     
-    # 3. Берем лимит из определенных настроек
     limit_for_memory = settings_to_use.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
     logging.info(f"Для анализа памяти будет использовано {limit_for_memory} сообщений (из настроек).")
 
-    # 4. Используем полученный лимит при запросе истории
     chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id))
-    history, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=limit_for_memory))
-
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    history, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=limit_for_memory, settings=settings_to_use))    
 
     if history_error:
         flash(f"Ошибка получения истории для анализа: {history_error}", "error")

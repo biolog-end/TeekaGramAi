@@ -46,6 +46,21 @@
                                 <source src="data:{{ part.mime_type }};base64,{{ part.video_base64 }}" type="{{ part.mime_type }}">
                                 Ваш браузер не поддерживает тэг video.
                             </video>
+                        
+                        {% elif part.audio_base64 and part.mime_type in ['audio/mpeg', 'audio/ogg'] %}
+                        
+                             <audio controls>
+                                 <source src="data:{{ part.mime_type }};base64,{{ part.audio_base64 }}" type="{{ part.mime_type }}">
+                                 Ваш браузер не поддерживает аудио-элемент.
+                             </audio>
+                        {% elif part.file_base64 and part.mime_type == 'application/pdf' %}
+                             <a href="data:{{ part.mime_type }};base64,{{ part.file_base64 }}" target="_blank" class="pdf-attachment">
+                                 <span class="pdf-icon">📄</span>
+                                 <div class="pdf-info">
+                                     <strong>PDF Документ</strong>
+                                     <small>Нажмите, чтобы открыть в новой вкладке</small>
+                                 </div>
+                             </a>
                         {% endif %}
                         
 
@@ -65,7 +80,6 @@
 <div class="content-card">
     <div class="generation-header">
         <h2>Генерация ответа</h2>
-        <!-- ИСПРАВЛЕННЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ -->
         <form action="{{ url_for('set_generation_mode', chat_id=chat_id) }}" method="POST" class="mode-switcher-form">
             <button type="submit" name="mode" value="prompt" class="switch-button {{ 'active' if generation_mode == 'prompt' }}">
                 Режим Промпта
@@ -163,7 +177,7 @@
 </div>
 
 <!-- =================================================================== -->
-<!-- ==== БЛОКИ СТИКЕРОВ И НАСТРОЕК (ТЕПЕРЬ ОБЩИЕ И ВНЕ УСЛОВИЙ) ====== -->
+<!-- ==== БЛОКИ СТИКЕРОВ И НАСТРОЕК  =================================== -->
 <!-- =================================================================== -->
 <div class="content-card">
     <div class="sticker-controls">
@@ -212,6 +226,39 @@
                 {% endif %}
             </p>
             <form action="{{ url_for('save_chat_settings_route', chat_id=chat_id) }}" method="post" id="advanced-settings-form">
+                <h4>Настройки обработки медиа</h4>
+                <p class="settings-description" style="font-size: 0.9em; text-align: left; padding-bottom: 10px; margin-bottom: 15px; border-bottom: none;">
+                    Отключите галочки, чтобы вместо медиа-файлов в историю для нейросети подставлялась текстовая заглушка (например, "[Изображение]").
+                    Это помогает экономить токены и избегать обработки ненужного контента.
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="can_see_photos" id="can_see_photos" value="true" {% if chat_settings.get('can_see_photos', True) %}checked{% endif %}>
+                            Может видеть фото
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="can_see_videos" id="can_see_videos" value="true" {% if chat_settings.get('can_see_videos', True) %}checked{% endif %}>
+                             Может видеть видео и кружочки
+                        </label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="can_see_audio" id="can_see_audio" value="true" {% if chat_settings.get('can_see_audio', True) %}checked{% endif %}>
+                            Может "слышать" аудио и голосовые
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="can_see_files_pdf" id="can_see_files_pdf" value="true" {% if chat_settings.get('can_see_files_pdf', True) %}checked{% endif %}>
+                            Может читать файлы (PDF)
+                        </label>
+                    </div>
+                </div>
                 <h4>Настройки Авто-режима</h4>
                 <div class="form-row">
                     <div class="form-group">

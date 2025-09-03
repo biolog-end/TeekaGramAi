@@ -498,7 +498,7 @@ async def get_chat_info(chat_id):
         error = f"Error getting chat info for {chat_id}: {e}"
     return chat_info, error
 
-async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5):
+async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, settings=None):
     """
     Получает историю сообщений, форматирует ее и объединяет последовательные сообщения
     от одного и того же отправителя. КЕШИРУЕТ МЕДИА для быстрой перезагрузки.
@@ -514,6 +514,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5):
             else: return [], "Error: Could not determine user ID."
         except Exception as e:
             return [], f"Error getting user ID: {e}"
+
+    if settings is None:
+        settings = {} 
 
     raw_intermediate_list = []
     error_message = None
@@ -560,64 +563,118 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5):
             
             cache_key = (chat_id, msg.id)
             if msg.media and cache_key in MESSAGE_MEDIA_CACHE:
-                # Если медиа уже в кеше, используем его
-                content_parts.extend(MESSAGE_MEDIA_CACHE[cache_key])
-                is_media_message = True
-                logging.debug(f"Использованы кешированные медиа для сообщения {msg.id}")
+                cached_data = MESSAGE_MEDIA_CACHE[cache_key]
+                mime_type = cached_data[0].get('mime_type')
+                can_see = True
+                placeholder = "[Медиа] - не удалось загрузить"
+
+                if mime_type == 'image/jpeg':
+                    can_see = settings.get('can_see_photos', True)
+                    placeholder = "[Изображение] - не удалось загрузить"
+                elif mime_type == 'video/mp4':
+                    can_see = settings.get('can_see_videos', True)
+                    placeholder = "[Видео] - не удалось загрузить"
+                elif mime_type in ['audio/mpeg', 'audio/ogg']:
+                    can_see = settings.get('can_see_audio', True)
+                    placeholder = "[Аудио] - не удалось загрузить"
+                elif mime_type == 'application/pdf':
+                    can_see = settings.get('can_see_files_pdf', True)
+                    placeholder = "[PDF-файл] - не удалось загрузить"
+
+                if can_see:
+                    content_parts.extend(cached_data)
+                    is_media_message = True
+                    logging.debug(f"Использованы кешированные медиа ({mime_type}) для сообщения {msg.id}")
+                else:
+                    content_text = f"{placeholder} - не удалось загрузить"
+
             elif msg.media:
-                # Медиа нет в кеше, обрабатываем
-                media_processed = False
+                is_media_message = True 
+                media_processed_to_base64 = False
                 temp_media_parts = []
                 
+                # === Переработанная логика обработки медиа ===
                 if isinstance(msg.media, MessageMediaPhoto):
-                    is_media_message = True
-                    image_bytes = await msg.download_media(file=bytes)
-                    if image_bytes:
-                        temp_media_parts.append({
-                            "image_base64": base64.b64encode(image_bytes).decode('utf-8'),
-                            "mime_type": "image/jpeg"
-                        })
-                    media_processed = True
-                
-                elif isinstance(msg.media, MessageMediaDocument):
-                    is_video = any(isinstance(attr, DocumentAttributeVideo) for attr in getattr(msg.media.document, 'attributes', []))
-                    
-                    # Проверяем, что это видео и оно в формате MP4
-                    if is_video and getattr(msg.media.document, 'mime_type', None) == 'video/mp4':
-                        is_media_message = True
-                        video_bytes = await msg.download_media(file=bytes)
-                        if video_bytes:
-                            temp_media_parts.append({
-                                "video_base64": base64.b64encode(video_bytes).decode('utf-8'),
-                                "mime_type": "video/mp4"
-                            })
-                        media_processed = True
-                    elif is_video:
-                         # Если это видео, но не MP4, ставим заглушку
-                         content_text = "[Видео (не удалось загрузить)]"
+                    if settings.get('can_see_photos', True):
+                        image_bytes = await msg.download_media(file=bytes)
+                        if image_bytes:
+                            temp_media_parts = [{
+                                "image_base64": base64.b64encode(image_bytes).decode('utf-8'),
+                                "mime_type": "image/jpeg"
+                            }]
+                            media_processed_to_base64 = True
+                    else:
+                        content_text = "[Изображение]- не удалось загрузить"
+                        is_media_message = False
 
-                if not media_processed:
+                elif isinstance(msg.media, MessageMediaDocument):
+                    doc = msg.media.document
+                    doc_attrs = getattr(doc, 'attributes', [])
+                    doc_mime = getattr(doc, 'mime_type', '')
+
+                    is_video = any(isinstance(attr, DocumentAttributeVideo) for attr in doc_attrs)
+                    is_audio = any(isinstance(attr, DocumentAttributeAudio) for attr in doc_attrs)
+                    is_pdf = doc_mime == 'application/pdf'
+
+                    if is_video:
+                        is_round = any(getattr(attr, 'round_message', False) for attr in doc_attrs)
+                        placeholder = "[Видео-кружок]- не удалось загрузить" if is_round else "[Видео]- не удалось загрузить"
+                        if settings.get('can_see_videos', True):
+                            if doc_mime == 'video/mp4':
+                                video_bytes = await msg.download_media(file=bytes)
+                                if video_bytes:
+                                    temp_media_parts = [{
+                                        "video_base64": base64.b64encode(video_bytes).decode('utf-8'),
+                                        "mime_type": "video/mp4"
+                                    }]
+                                    media_processed_to_base64 = True
+                            else:
+                                content_text = f"{placeholder}"
+                                is_media_message = False
+                        else:
+                            content_text = f"{placeholder}"
+                            is_media_message = False
+
+                    elif is_audio:
+                        is_voice = any(getattr(attr, 'voice', False) for attr in doc_attrs)
+                        placeholder = "[Голосовое сообщение]  - не удалось загрузить" if is_voice else "[Аудиофайл]  - не удалось загрузить" 
+                        if settings.get('can_see_audio', True):
+                             if doc_mime in ['audio/mpeg', 'audio/ogg']:
+                                audio_bytes = await msg.download_media(file=bytes)
+                                if audio_bytes:
+                                    temp_media_parts = [{
+                                        "audio_base64": base64.b64encode(audio_bytes).decode('utf-8'),
+                                        "mime_type": doc_mime
+                                    }]
+                                    media_processed_to_base64 = True
+                             else:
+                                content_text = f"{placeholder} (тип {doc_mime}) - не удалось загрузить"
+                                is_media_message = False
+                        else:
+                            content_text = f"{placeholder} - не удалось загрузить"
+                            is_media_message = False
+
+                    elif is_pdf:
+                        placeholder = "[PDF-файл] - не удалось загрузить"
+                        if settings.get('can_see_files_pdf', True):
+                            pdf_bytes = await msg.download_media(file=bytes)
+                            if pdf_bytes:
+                                temp_media_parts = [{
+                                    "file_base64": base64.b64encode(pdf_bytes).decode('utf-8'),
+                                    "mime_type": "application/pdf"
+                                }]
+                                media_processed_to_base64 = True
+                        else:
+                            content_text = f"{placeholder} - не удалось загрузить"
+                            is_media_message = False
+                    
+                    else: 
+                        content_text = "[Документ]- не удалось загрузить"
+                        is_media_message = False
+                
+                else: 
                     media_type_description = "[Медиа]"
-                    if isinstance(msg.media, MessageMediaDocument):
-                        is_video = False
-                        is_audio = False
-                        is_voice = False
-                        is_video_note = False
-                        for attr in getattr(msg.media.document, 'attributes', []):
-                            if isinstance(attr, DocumentAttributeVideo):
-                                is_video = True
-                                is_video_note = attr.round_message
-                                break
-                            if isinstance(attr, DocumentAttributeAudio):
-                                is_audio = True
-                                is_voice = attr.voice
-                                break
-                        if is_video_note: media_type_description = "[Видео-кружок]"
-                        elif is_video: media_type_description = "[Видео]"
-                        elif is_voice: media_type_description = "[Голосовое сообщение]"
-                        elif is_audio: media_type_description = "[Аудио]"
-                        else: media_type_description = "[Документ]"
-                    elif isinstance(msg.media, MessageMediaWebPage): media_type_description = "[Ссылка]"
+                    if isinstance(msg.media, MessageMediaWebPage): media_type_description = "[Ссылка]"
                     elif isinstance(msg.media, MessageMediaContact): media_type_description = "[Контакт]"
                     elif isinstance(msg.media, MessageMediaGeo): media_type_description = "[Геопозиция]"
                     elif isinstance(msg.media, MessageMediaPoll): media_type_description = "[Опрос]"
@@ -626,17 +683,20 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5):
                     elif isinstance(msg.media, MessageMediaInvoice): media_type_description = "[Счет]"
                     elif isinstance(msg.media, MessageMediaUnsupported): media_type_description = "[Неподдерживаемое сообщение]"
                     content_text = f"{media_type_description} - не удалось загрузить"
+                    is_media_message = False
                 
-                if temp_media_parts:
+                if media_processed_to_base64 and temp_media_parts:
                     content_parts.extend(temp_media_parts)
-                    MESSAGE_MEDIA_CACHE[cache_key] = temp_media_parts # Сохраняем в кеш
-            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+                    MESSAGE_MEDIA_CACHE[cache_key] = temp_media_parts
 
             if msg.text:
-                content_text = msg.text
+                if content_text:
+                    content_text = f"{msg.text}\n{content_text}"
+                else:
+                    content_text = msg.text
             elif msg.sticker:
                 codename = STICKER_ID_TO_CODENAME.get(msg.sticker.id, '')
-                content_text = f"sticker({codename})" if codename else f"[Стикер (?) - не удалось загрузить]"
+                content_text = f"sticker({codename})" if codename else f"[Стикер]"
 
             full_text_block = f"{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
             if content_text or not content_parts:

@@ -441,6 +441,22 @@ form[action*="save_prompt"] button:hover
 .settings-actions .reset-form {
     margin: 0; /* Убираем лишние отступы у формы */
 }
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    height: auto;
+    margin-bottom: 0;
+    transform: scale(1.3);
+    accent-color: var(--button-primary-bg);
+}
+
 /* Стили для кнопок в этом блоке */
 .settings-actions button[type="submit"] {
     background-color: var(--primary-accent-color);
@@ -560,6 +576,42 @@ small {
     align-self: flex-end;
     border-bottom-right-radius: 4px; 
     margin-left: auto;
+}
+
+.message audio {
+    width: 100%;
+    margin-top: 10px;
+    border-radius: var(--border-radius-medium);
+}
+
+.pdf-attachment {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    margin-top: 10px;
+    background-color: var(--bg-gradient-end);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    transition: background-color 0.2s, box-shadow 0.2s;
+}
+.pdf-attachment:hover {
+    background-color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    text-decoration: none;
+}
+.pdf-icon {
+    font-size: 1.8em;
+    color: var(--button-primary-bg);
+}
+.pdf-info strong {
+    display: block;
+    color: var(--heading-color);
+    font-weight: 600;
+}
+.pdf-info small {
+    font-size: 0.85em;
+    opacity: 0.8;
 }
 
 #generate-form {

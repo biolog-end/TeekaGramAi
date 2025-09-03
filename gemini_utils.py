@@ -123,6 +123,28 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
                         logging.error(f"Ошибка декодирования Base64 для видео: {e}")
                         api_parts.append(types.Part.from_text(text="[Ошибка: не удалось обработать видео]"))
 
+                elif 'audio_base64' in part_item and part_item['mime_type'] in ["audio/mpeg", "audio/ogg"]:
+                    try:
+                        audio_data = base64.b64decode(part_item['audio_base64'])
+                        api_parts.append(types.Part.from_bytes(
+                            mime_type=part_item['mime_type'], data=audio_data
+                        ))
+                        logging.info(Fore.BLUE + f"Добавлен Part.from_bytes ({part_item['mime_type'].upper()}) в запрос к API.")
+                    except Exception as e:
+                        logging.error(f"Ошибка декодирования Base64 для аудио: {e}")
+                        api_parts.append(types.Part.from_text(text="[Ошибка: не удалось обработать аудио]"))
+
+                elif 'file_base64' in part_item and part_item['mime_type'] == "application/pdf":
+                    try:
+                        file_data = base64.b64decode(part_item['file_base64'])
+                        api_parts.append(types.Part.from_bytes(
+                            mime_type=part_item['mime_type'], data=file_data
+                        ))
+                        logging.info(Fore.BLUE + "Добавлен Part.from_bytes (PDF ФАЙЛ) в запрос к API.")
+                    except Exception as e:
+                        logging.error(f"Ошибка декодирования Base64 для файла: {e}")
+                        api_parts.append(types.Part.from_text(text="[Ошибка: не удалось обработать PDF-файл]"))
+
                 elif 'image_base64' in part_item and 'mime_type' in part_item:
                     try:
                         image_data = base64.b64decode(part_item['image_base64'])
