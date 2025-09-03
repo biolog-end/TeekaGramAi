@@ -1,7 +1,8 @@
 import os
 import json
 import logging
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import google.auth
 from google.api_core import exceptions as google_exceptions
 import datetime
