@@ -12,8 +12,8 @@ import config as app_config
 
 # --- Настройки ---
 SESSION_NAME = 'kadzu'
-TARGET_CHAT_ID = 5495213645
-STICKER_JSON_FILE = 'stickers.json'
+TARGET_CHAT_ID = 546999817 #5495213645
+STICKER_JSON_FILE = 'data/stickers.json'
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

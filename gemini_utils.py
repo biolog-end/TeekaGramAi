@@ -22,7 +22,7 @@ def init_gemini_client():
     global gemini_client, BASE_GEMENI_MODEL
     logging.info("Инициализация клиента Gemini...")
     try:
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
         if not api_key:
              logging.info("GOOGLE_API_KEY не найден, попытка использовать Application Default Credentials (ADC)...")
              try:
@@ -66,11 +66,12 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         model_name (str): Имя модели Gemini (e.g., 'gemini-2.0-flash-001' or 'tunedModels/your-model-id').
         system_prompt (str | None): Системная инструкция.
         chat_history (list): Список сообщений из Telegram в формате [{'role': 'user'/'model', 'parts': [{'text': ...}]}].
-        config (dict | None): Дополнительные параметры генерации (temperature, top_p, etc.).
+        config (types.GenerateContentConfig | None): Конфигурация с доп. параметрами (tools, thinking_config).
 
     Returns:
         tuple: (generated_text: str | None, error_message: str | None)
     """
+
     global GENERATION_LOG_FILE, gemini_client, BASE_GEMENI_MODEL
 
     if not gemini_client:
@@ -170,20 +171,37 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
 
     api_args = { "model": model_name, "contents": contents_list, }
     system_instruction_text_to_log = None
-    generation_config_to_use = None
-    base_gen_config_obj = None
-    if isinstance(config, dict) and config:
-        try:
-            base_gen_config_obj = types.GenerationConfig(**config)
-            logging.info(f"Используются базовые параметры генерации из config: {config}")
-        except Exception as cfg_err:
-            logging.warning(f"Не удалось создать GenerationConfig: {cfg_err}. Игнорируются.")
-            base_gen_config_obj = types.GenerationConfig()
-    elif isinstance(config, types.GenerationConfig):
-        base_gen_config_obj = config
+
+    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+    # Сразу определяем основной объект конфигурации.
+    # Если config уже является нужным нам объектом GenerateContentConfig, используем его.
+    if isinstance(config, types.GenerateContentConfig):
+        generation_config_to_use = config
+        logging.info("Используется переданный объект GenerateContentConfig.")
     else:
-        base_gen_config_obj = types.GenerationConfig()
-        logging.info("Используется конфигурация генерации по умолчанию.")
+        # В противном случае, создаем новый объект.
+        generation_config_to_use = types.GenerateContentConfig()
+        # И пытаемся заполнить его из старых форматов (dict или GenerationConfig).
+        if isinstance(config, dict) and config:
+            try:
+                # Параметры вроде temperature/top_p находятся во вложенном объекте
+                generation_config_to_use.generation_config = types.GenerationConfig(**config)
+                logging.info(f"Параметры генерации из словаря {config} применены.")
+            except Exception as cfg_err:
+                logging.warning(f"Не удалось создать GenerationConfig из словаря: {cfg_err}.")
+        elif isinstance(config, types.GenerationConfig):
+            generation_config_to_use.generation_config = config
+            logging.info("Переданный GenerationConfig был помещен в основной GenerateContentConfig.")
+        else:
+            logging.info("Используется конфигурация генерации по умолчанию.")
+
+    # Мы больше не нуждаемся в переменной base_gen_config_obj, так как
+    # generation_config_to_use теперь наша единственная и основная конфигурация.
+
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+
     if system_prompt:
         now = datetime.datetime.now()
         time_suffix = f"\n сегодня {now.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -197,22 +215,44 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         else:
             logging.info(Fore.CYAN + "Модель базовая: системный промпт передается через GenerateContentConfig.")
             try:
-                system_config = types.GenerateContentConfig(system_instruction=[types.Part.from_text(text=system_prompt)])
-                generation_config_to_use = system_config
+                # Теперь мы просто изменяем существующий объект, а не переприсваиваем его
+                generation_config_to_use.system_instruction = [types.Part.from_text(text=system_prompt)]
                 system_instruction_text_to_log = system_prompt
             except Exception as sys_cfg_err:
-                logging.error(f"Ошибка создания GenerateContentConfig: {sys_cfg_err}", exc_info=True)
-                generation_config_to_use = base_gen_config_obj
+                logging.error(f"Ошибка добавления system_instruction: {sys_cfg_err}", exc_info=True)
                 system_instruction_text_to_log = "[ОШИБКА СОЗДАНИЯ]"
     else:
-        generation_config_to_use = base_gen_config_obj
+        # Это присваивание больше не нужно, так как generation_config_to_use уже инициализирован выше.
+        # generation_config_to_use = base_gen_config_obj
         system_instruction_text_to_log = None
+    
     if not is_tuned_model:
-        if generation_config_to_use and ((hasattr(generation_config_to_use, 'temperature') and generation_config_to_use.temperature is not None) or (hasattr(generation_config_to_use, 'top_p') and generation_config_to_use.top_p is not None) or (hasattr(generation_config_to_use, 'top_k') and generation_config_to_use.top_k is not None) or (isinstance(generation_config_to_use, types.GenerateContentConfig) and hasattr(generation_config_to_use, 'system_instruction') and generation_config_to_use.system_instruction)):
+        should_add_config = generation_config_to_use and (
+            (hasattr(generation_config_to_use, 'temperature') and generation_config_to_use.temperature is not None) or
+            (hasattr(generation_config_to_use, 'top_p') and generation_config_to_use.top_p is not None) or
+            (hasattr(generation_config_to_use, 'top_k') and generation_config_to_use.top_k is not None) or
+            (hasattr(generation_config_to_use, 'system_instruction') and generation_config_to_use.system_instruction) or
+            (hasattr(generation_config_to_use, 'tools') and generation_config_to_use.tools) or
+            (hasattr(generation_config_to_use, 'thinking_config') and generation_config_to_use.thinking_config)
+        )
+        if should_add_config:
             api_args["config"] = generation_config_to_use
     else:
         api_args.pop("config", None)
+    
     try:
+        if api_args.get("config"):
+            conf_to_log = api_args.get("config")
+            logging.info(f"[DEBUG-CONFIG] Объект 'config' ПЕРЕДАЕТСЯ в API.")
+            if hasattr(conf_to_log, 'tools'):
+                 logging.info(f"[DEBUG-CONFIG] Tools: {repr(conf_to_log.tools)}")
+            if hasattr(conf_to_log, 'thinking_config'):
+                 logging.info(f"[DEBUG-CONFIG] Thinking Config: {repr(conf_to_log.thinking_config)}")
+            if hasattr(conf_to_log, 'system_instruction') and conf_to_log.system_instruction:
+                 logging.info(f"[DEBUG-CONFIG] System Instruction: Присутствует.")
+        else:
+            logging.info("[DEBUG-CONFIG] Объект 'config' НЕ передается в API.")
+
         log_prefix = f"ГЕНЕРАЦИЯ ответа (Модель: {model_name}) [История: {len(contents_list)}]"
         if system_instruction_text_to_log and not system_instruction_text_to_log.startswith("["): log_prefix += " [С system_instruction]"
         elif system_instruction_text_to_log: log_prefix += f" {system_instruction_text_to_log}"

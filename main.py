@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from colorama import Fore, Style, init
 from werkzeug.routing import BaseConverter
 import character_utils 
+from google.genai import types
+import argparse 
 
 
 init(autoreset=True)
@@ -51,8 +53,9 @@ class SignedIntConverter(BaseConverter):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s')
 
 app = Flask(__name__)
+app.config['SESSION_COOKIE_NAME'] = 'telegram_bot_session_1'
 app.url_map.converters['sint'] = SignedIntConverter
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24)) 
+app.secret_key = "super-secret-key-for-bot-alpha-9a8b7c"#os.getenv('FLASK_SECRET_KEY', os.urandom(24)) 
 
 DEFAULT_SYSTEM_PROMPT = """
 Чтобы написать сразу несколько коротких сообщений, разделяй их используя ключевое слово {split}
@@ -65,6 +68,8 @@ CHAT_SETTINGS_FILE = 'data/chat_settings.json'
 STICKER_JSON_FILE = 'data/stickers.json'
 CHARTS_LIMIT = 120
 CHAT_LIMIT = 10000
+TELEGRAM_MAX_MESSAGE_LENGTH = 4006
+
 
 gemini_client_global = None
 telegram_thread = None 
@@ -74,6 +79,10 @@ DEFAULT_CHAT_SETTINGS = {
     # Общие
     "num_messages_to_fetch": 65,
     "add_chat_name_prefix": True,
+    # Настройки для Gemini
+    "model_name": "", 
+    "enable_google_search": False,
+    "enable_thinking": False,
     # Для медиа
     "can_see_photos": True,
     "can_see_videos": True,
@@ -92,6 +101,10 @@ DEFAULT_CHAT_SETTINGS = {
     "base_thinking_delay_s_min": 1.2,
     "base_thinking_delay_s_max": 2.8,
     "max_typing_duration_s": 25.0,
+    # Настройки для опечаток
+    "substitution_chance": 0.005,
+    "transposition_chance": 0.005,
+    "skip_chance": 0.002,
 }
 
 auto_mode_workers = {} 
@@ -108,10 +121,11 @@ def load_accounts():
         logging.error(f"Ошибка чтения файла '{ACCOUNTS_JSON_FILE}': {e}")
         return {}
 
-def choose_account_from_console():
+def choose_account_from_console(account_choice_arg=None):
     """
     Отображает в консоли список аккаунтов и просит пользователя сделать выбор.
     Возвращает имя выбранного файла сессии.
+    Может принимать выбор как аргумент.
     """
     accounts = load_accounts()
     if not accounts:
@@ -120,6 +134,19 @@ def choose_account_from_console():
 
     account_list = list(accounts.items())
 
+    if account_choice_arg is not None:
+        try:
+            choice_index = int(account_choice_arg) - 1
+            if 0 <= choice_index < len(account_list):
+                selected_session_file = account_list[choice_index][1]
+                selected_account_name = account_list[choice_index][0]
+                print(Fore.GREEN + f"Аккаунт выбран автоматически: '{selected_account_name}' (№{account_choice_arg})...")
+                return selected_session_file
+            else:
+                print(Fore.RED + f"Ошибка: номер аккаунта '{account_choice_arg}' из аргумента вне диапазона. Переход к ручному выбору.")
+        except ValueError:
+            print(Fore.RED + f"Ошибка: переданный аргумент '{account_choice_arg}' не является числом. Переход к ручному выбору.")
+    
     print(Fore.CYAN + "Пожалуйста, выберите аккаунт для запуска:")
     for i, (name, _) in enumerate(account_list):
         print(f"  {Fore.GREEN}{i + 1}{Style.RESET_ALL}: {name}")
@@ -148,10 +175,10 @@ def choose_account_from_console():
 def load_chat_settings():
     """Загружает все сохраненные настройки чатов из JSON файла."""
     try:
-        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        
         if os.path.exists(CHAT_SETTINGS_FILE):
             with open(CHAT_SETTINGS_FILE, 'r', encoding='utf-8') as f:
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+        
                 # Конвертируем ключи обратно в int
                 return {int(k): v for k, v in json.load(f).items()}
         return {}
@@ -162,11 +189,11 @@ def load_chat_settings():
 def save_chat_settings(settings_dict):
     """Сохраняет словарь настроек чатов в JSON файл."""
     try:
-        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        
         os.makedirs(os.path.dirname(CHAT_SETTINGS_FILE), exist_ok=True)
         with open(CHAT_SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(settings_dict, f, ensure_ascii=False, indent=4)
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+        
     except IOError as e:
         logging.error(f"Ошибка сохранения файла настроек ({CHAT_SETTINGS_FILE}): {e}")
         flash("Не удалось сохранить настройки в файл.", "error")
@@ -182,12 +209,10 @@ def get_chat_settings(chat_id):
 
     # Создаем копию настроек по умолчанию, чтобы не изменять оригинал
     final_settings = DEFAULT_CHAT_SETTINGS.copy()
-    
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
     # Добавляем новые настройки для режимов
     final_settings['generation_mode'] = 'prompt' # 'prompt' или 'character'
     final_settings['active_character_id'] = None
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
     if chat_specific_settings:
         # Обновляем значения по умолчанию сохраненными, если они есть
@@ -371,6 +396,35 @@ def parse_time_from_message(message_dict):
         logging.error(f"Ошибка парсинга времени из текста сообщения: {e}")
         return None
 
+def split_message_by_limit(text: str, limit: int) -> list[str]:
+    """
+    Разделяет длинный текст на части, не превышающие заданный лимит.
+    Разделение происходит по переносам строк, а затем по пробелам,
+    чтобы не разрывать слова.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks = []
+    while len(text) > 0:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        
+        split_pos = text.rfind('\n\n', 0, limit)
+        if split_pos == -1:
+            split_pos = text.rfind('\n', 0, limit)
+        if split_pos == -1:
+            split_pos = text.rfind(' ', 0, limit)
+
+        if split_pos == -1:
+            split_pos = limit
+
+        chunks.append(text[:split_pos])
+        text = text[split_pos:].lstrip() 
+
+    return chunks
+
 def send_generated_reply(chat_id: int, message_text: str, settings: dict = None):
     """
     Централизованная функция для отправки сгенерированного ответа.
@@ -395,20 +449,36 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
     
     tasks_to_send = []
     for part in initial_parts:
+        # Эта логика остается прежней: сначала ищем и отделяем стикеры
         found_stickers = list(re.finditer(sticker_pattern, part, re.IGNORECASE))
         
         if not found_stickers:
-            tasks_to_send.append({"type": "text", "content": part})
+            # Если стикеров нет, проверяем длину текстовой части
+            if len(part) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                # Если текст слишком длинный, разбиваем его на части
+                text_chunks = split_message_by_limit(part, TELEGRAM_MAX_MESSAGE_LENGTH)
+                for chunk in text_chunks:
+                    tasks_to_send.append({"type": "text", "content": chunk})
+            else:
+                # Если длина в норме, добавляем как есть
+                tasks_to_send.append({"type": "text", "content": part})
             continue
 
+        # Эта логика тоже остается: обрабатываем смешанный контент из текста и стикеров
         last_index = 0
         for match in found_stickers:
             start, end = match.span()
             if start > last_index:
                 text_before = part[last_index:start].strip()
                 if text_before:
-                    tasks_to_send.append({"type": "text", "content": text_before})
-            
+                    # Проверяем на длину КАЖДЫЙ текстовый блок между стикерами
+                    if len(text_before) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                        text_chunks = split_message_by_limit(text_before, TELEGRAM_MAX_MESSAGE_LENGTH)
+                        for chunk in text_chunks:
+                            tasks_to_send.append({"type": "text", "content": chunk})
+                    else:
+                        tasks_to_send.append({"type": "text", "content": text_before})
+
             codename = match.group(1)
             tasks_to_send.append({"type": "sticker", "content": codename})
             
@@ -417,7 +487,13 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
         if last_index < len(part):
             text_after = part[last_index:].strip()
             if text_after:
-                tasks_to_send.append({"type": "text", "content": text_after})
+                 # И, конечно, проверяем последний текстовый блок после всех стикеров
+                 if len(text_after) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                    text_chunks = split_message_by_limit(text_after, TELEGRAM_MAX_MESSAGE_LENGTH)
+                    for chunk in text_chunks:
+                        tasks_to_send.append({"type": "text", "content": chunk})
+                 else:
+                    tasks_to_send.append({"type": "text", "content": text_after})
 
     logging.info(f"Будет выполнено {len(tasks_to_send)} задач на отправку в чат {chat_id}.")
     
@@ -558,8 +634,10 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                          last_processed_user_msg_time = latest_message_time
 
             if should_generate:
-                final_system_prompt = ""
-                model_name_to_use = BASE_GEMENI_MODEL 
+                model_name_from_settings = settings_for_generation.get('model_name', '')
+                model_name_to_use = model_name_from_settings or BASE_GEMENI_MODEL
+
+                logging.info(f"[{worker_name}] [DEBUG-SETTINGS] Используются следующие настройки генерации: {settings_for_generation}")
 
                 if generation_mode == 'character':
                     character_id = base_chat_settings.get('active_character_id')
@@ -638,10 +716,35 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                                 with auto_mode_lock:
                                     if chat_id in auto_mode_workers: auto_mode_workers[chat_id]["bot_last_message_anchor"] = new_anchor_text
                                 logging.info(f"[{worker_name}] Авто-память: Установлен новый якорь: '{new_anchor_text[:50] if new_anchor_text else 'None'}'")
+                tools = []
+                if settings_for_generation.get('enable_google_search', False):
+                    tools.append(#types.Tool(url_context=types.UrlContext()),
+                                 types.Tool(googleSearch=types.GoogleSearch()))
+
+                thinking_config = None
+                thinking_models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+                model_name_lower = model_name_to_use.lower()
+                is_thinking_model = any(m in model_name_lower for m in thinking_models)
+
+                if settings_for_generation.get('enable_thinking', False) and is_thinking_model:
+                    thinking_config = types.ThinkingConfig(thinking_budget=-1)
+                elif settings_for_generation.get('enable_thinking', False):
+                    logging.warning(f"[{worker_name}] Thinking mode включен, но модель '{model_name_to_use}' его не поддерживает. Игнорируется.")
+
+                final_generation_config_parts = {}
+                if tools:
+                    final_generation_config_parts['tools'] = tools
+                if thinking_config:
+                    final_generation_config_parts['thinking_config'] = thinking_config
+                
+                final_generation_config = types.GenerateContentConfig(**final_generation_config_parts) if final_generation_config_parts else None
 
                 logging.info(f"[{worker_name}] Вызов Gemini для генерации (лимит истории: {num_messages})...")
                 generated_text, gen_error = generate_chat_reply_original(
-                    model_name=model_name_to_use, system_prompt=final_system_prompt.strip(), chat_history=full_history
+                    model_name=model_name_to_use, 
+                    system_prompt=final_system_prompt.strip(), 
+                    chat_history=full_history,
+                    config=final_generation_config 
                 )
                 if gen_error:
                     logging.error(f"[{worker_name}] Ошибка генерации Gemini: {gen_error}")
@@ -811,7 +914,10 @@ def generate_reply(chat_id):
         )
     system_prompt_from_form = request.form.get('system_prompt', DEFAULT_SYSTEM_PROMPT)
     model_name_input = request.form.get('model_name', '').strip()
-    model_name_to_use = model_name_input if model_name_input else BASE_GEMENI_MODEL
+
+    model_from_settings = settings_for_generation.get('model_name', '')
+    model_name_to_use = model_from_settings or model_name_input or BASE_GEMENI_MODEL
+
     logging.info(f"Получение истории для генерации (чат {chat_id}, лимит: {current_limit})")
     history_data, history_error_for_render = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_for_generation))
     chat_info_data = session.get('chat_info')
@@ -861,10 +967,34 @@ def generate_reply(chat_id):
             chat_settings=chat_settings
         )
     logging.info(f"Вызов Gemini для генерации (чат {chat_id}, модель: {model_name_to_use})")
+    tools = []
+    if settings_for_generation.get('enable_google_search', False):
+        tools.append(#types.Tool(url_context=types.UrlContext()),
+                     types.Tool(googleSearch=types.GoogleSearch()))
+
+    thinking_config = None
+    thinking_models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+    model_name_lower = model_name_to_use.lower()
+    is_thinking_model = any(m in model_name_lower for m in thinking_models)
+
+    if settings_for_generation.get('enable_thinking', False) and is_thinking_model:
+        thinking_config = types.ThinkingConfig(thinking_budget=-1)
+    elif settings_for_generation.get('enable_thinking', False):
+        logging.warning(f"Thinking mode включен, но модель '{model_name_to_use}' его не поддерживает. Игнорируется.")
+
+    final_generation_config_parts = {}
+    if tools:
+        final_generation_config_parts['tools'] = tools
+    if thinking_config:
+        final_generation_config_parts['thinking_config'] = thinking_config
+    
+    final_generation_config = types.GenerateContentConfig(**final_generation_config_parts) if final_generation_config_parts else None
+
     generated_text, generation_error_message = generate_chat_reply_original(
         model_name=model_name_to_use,
         system_prompt=final_system_prompt,
-        chat_history=history_data 
+        chat_history=history_data,
+        config=final_generation_config 
     )
     if generation_error_message:
         flash(f"Ошибка генерации ответа: {generation_error_message}", "error")
@@ -1182,6 +1312,12 @@ def save_chat_settings_route(chat_id):
     settings_data = {}
     try:
         # Сначала собираем все данные из формы в словарь
+        settings_data['substitution_chance'] = float(request.form.get('substitution_chance'))
+        settings_data['transposition_chance'] = float(request.form.get('transposition_chance'))
+        settings_data['skip_chance'] = float(request.form.get('skip_chance'))
+        settings_data['model_name'] = request.form.get('model_name_advanced', '')
+        settings_data['enable_google_search'] = 'enable_google_search' in request.form
+        settings_data['enable_thinking'] = 'enable_thinking' in request.form
         settings_data['can_see_photos'] = 'can_see_photos' in request.form
         settings_data['can_see_videos'] = 'can_see_videos' in request.form
         settings_data['can_see_audio'] = 'can_see_audio' in request.form
@@ -1415,6 +1551,9 @@ def send_reply(chat_id):
     return redirect(url_for('chat_page', chat_id=chat_id))
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Запуск Telegram AI бота.")
+    parser.add_argument('--account', type=int, help='Номер аккаунта для автоматического выбора.')
+    args = parser.parse_args()
     
     initialize_gemini()
     

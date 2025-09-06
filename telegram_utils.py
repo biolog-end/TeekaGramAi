@@ -72,9 +72,9 @@ async def update_online_status_periodically(client_instance):
         await asyncio.sleep(75)
 
 def make_human_like_typos(text: str,
-                                      substitution_chance: float = 0.01,
-                                      transposition_chance: float = 0.005,
-                                      skip_chance: float = 0.002) -> str:
+                    substitution_chance=0.005,
+                    transposition_chance=0.005,
+                    skip_chance=0.002) -> str:
     """
     Добавляет в текст человекоподобные опечатки для русского и английского языков,
     СТРОГО ИЗБЕГАЯ замены букв одного языка на буквы другого.
@@ -674,8 +674,8 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 
                 else: 
                     media_type_description = "[Медиа]"
-                    if isinstance(msg.media, MessageMediaWebPage): media_type_description = "[Ссылка]"
-                    elif isinstance(msg.media, MessageMediaContact): media_type_description = "[Контакт]"
+                    
+                    if isinstance(msg.media, MessageMediaContact): media_type_description = "[Контакт]"
                     elif isinstance(msg.media, MessageMediaGeo): media_type_description = "[Геопозиция]"
                     elif isinstance(msg.media, MessageMediaPoll): media_type_description = "[Опрос]"
                     elif isinstance(msg.media, MessageMediaVenue): media_type_description = "[Место]"
@@ -836,7 +836,7 @@ async def send_telegram_message(chat_id, message_text, settings=None):
     reply_to_id = None
     original_message_text = message_text
 
-    # 1. Ищем ПЕРВЫЙ тег, чтобы определить, на какое сообщение отвечать
+    # Ищем ПЕРВЫЙ тег, чтобы определить, на какое сообщение отвечать
     first_match = re.search(r"answer\s*\((\d+)\)", message_text, re.IGNORECASE)
 
     if first_match:
@@ -848,7 +848,7 @@ async def send_telegram_message(chat_id, message_text, settings=None):
             logging.warning(f"Не удалось преобразовать ID '{id_to_reply_str}' в число. Сообщение будет отправлено без ответа.")
             reply_to_id = None
 
-    # 2. Удаляем ВСЕ вхождения тега из текста сообщения, чтобы очистить его
+    # Удаляем ВСЕ вхождения тега из текста сообщения, чтобы очистить его
     message_text = re.sub(r"answer\s*\((\d+)\)", '', message_text, flags=re.IGNORECASE).strip()
     
     if first_match:
@@ -860,7 +860,19 @@ async def send_telegram_message(chat_id, message_text, settings=None):
          return True, "Message became empty after removing 'answer()' tag, sending cancelled."
     
     try:
-        message_text = final_fine_tune_sms(message_text)
+        if settings and isinstance(settings, dict):
+            sub_chance = settings.get('substitution_chance', 0.005)
+            trans_chance = settings.get('transposition_chance', 0.005)
+            skip_chance_val = settings.get('skip_chance', 0.002)
+            
+            message_text = final_fine_tune_sms(
+                message_text,
+                substitution_chance=sub_chance,
+                transposition_chance=trans_chance,
+                skip_chance=skip_chance_val
+            )
+        else:
+            message_text = final_fine_tune_sms(message_text)
     except Exception as e:
         logging.error(f"Ошибка при вызове final_fine_tune_sms: {e}")
     
@@ -872,7 +884,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
     error = None
 
     try:
-        # --- ИЗМЕНЕНИЕ: Используем настройки, если они переданы ---
         if settings and isinstance(settings, dict):
             min_delay_ms = settings.get('typing_delay_ms_min', 40.0)
             max_delay_ms = settings.get('typing_delay_ms_max', 90.0)
@@ -904,7 +915,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
         async with client.action(chat_id, 'typing'):
             await asyncio.sleep(full_delay_s)
 
-        # --- Конец блока симуляции ---
 
         logging.info(f"Отправка сообщения в чат {chat_id} (ответ на {reply_to_id if reply_to_id else 'нет'})...")
         await client.send_message(chat_id, message_text, reply_to=reply_to_id)

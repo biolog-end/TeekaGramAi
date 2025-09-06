@@ -161,7 +161,11 @@
             <div class="character-actions">
                 <form action="{{ url_for('generate_reply', chat_id=chat_id) }}" method="post" id="generate-form-character">
                     <input type="hidden" name="history_limit" value="{{ current_limit }}">
-                    <div class="form-group"><label for="model_name_char">🤖 Модель Gemini для ответа:</label><input type="text" name="model_name" id="model_name_char" value="{{ default_model_name }}" required></div>
+                    <div class="form-group">
+                        <label for="model_name_char">🤖 Модель Gemini для ответа:</label>
+                        <input type="text" name="model_name" id="model_name_char" value="{{ active_character_data.advanced_settings.get('model_name') or default_model_name }}" required>
+                        
+                    </div>
                     <button type="submit" class="generate-button">Сгенерировать ответ</button>
                 </form>
                 <form action="{{ url_for('update_memory_route', chat_id=chat_id) }}" method="POST">
@@ -283,6 +287,29 @@
                     <small>Добавляется к промпту при срабатывании таймаута.</small>
                 </div>
 
+                <h4>Настройки генерации Gemini</h4>
+                <div class="form-group">
+                    <label for="model_name_advanced">Модель для персонажа/чата</label>
+                    <input type="text" name="model_name_advanced" id="model_name_advanced" value="{{ chat_settings.get('model_name', '') }}">
+                    <small>Если указана, будет использоваться эта модель. В режиме "Персонаж" сохраняется для него. Оставьте пустым, чтобы использовать модель из основного поля ввода.</small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="enable_google_search" value="true" {% if chat_settings.get('enable_google_search') %}checked{% endif %}>
+                            Включить поиск Google
+                        </label>
+                        <small>Разрешает модели искать информацию в Google.</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="enable_thinking" value="true" {% if chat_settings.get('enable_thinking') %}checked{% endif %}>
+                            Включить "Размышление" (Thinking)
+                        </label>
+                        <small>Для моделей 2.5 Pro/Flash. Улучшает качество ответов.</small>
+                    </div>
+                </div>
+
                 <h4>Настройки симуляции и отправки</h4>
                  <div class="form-group">
                     <label for="num_messages_to_fetch">Количество сообщений для контекста</label>
@@ -324,6 +351,24 @@
                     <label for="max_typing_duration_s">Макс. длительность печати (сек)</label>
                     <input type="number" step="0.5" name="max_typing_duration_s" id="max_typing_duration_s" value="{{ chat_settings.max_typing_duration_s }}" required>
                     <small>Ограничение, чтобы симуляция не длилась вечно.</small>
+                </div>
+                <h4>Настройки симуляции опечаток</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="substitution_chance">Вероятность замены символа</label>
+                        <input type="number" step="0.0001" min="0" max="1" name="substitution_chance" id="substitution_chance" value="{{ chat_settings.get('substitution_chance', 0.005) }}" required>
+                        <small>Шанс замены буквы на соседнюю. Дефолт: 0.005</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="transposition_chance">Вероятность перестановки</label>
+                        <input type="number" step="0.0001" min="0" max="1" name="transposition_chance" id="transposition_chance" value="{{ chat_settings.get('transposition_chance', 0.005) }}" required>
+                        <small>Шанс перестановки двух соседних букв. Дефолт: 0.005</small>
+                    </div>
+                </div>
+                 <div class="form-group">
+                    <label for="skip_chance">Вероятность пропуска символа</label>
+                    <input type="number" step="0.0001" min="0" max="1" name="skip_chance" id="skip_chance" value="{{ chat_settings.get('skip_chance', 0.002) }}" required>
+                    <small>Шанс случайного удаления буквы или цифры. Дефолт: 0.002</small>
                 </div>
                 
                 <!-- Создаем контейнер для кнопок, чтобы выровнять их справа -->
