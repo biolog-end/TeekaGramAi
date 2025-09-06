@@ -699,8 +699,8 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 content_text = f"sticker({codename})" if codename else f"[Стикер]"
 
             full_text_block = f"{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
-            if content_text or not content_parts:
-                 content_parts.insert(0, {"text": full_text_block})
+
+            content_parts.insert(0, {"text": full_text_block})
 
             raw_intermediate_list.append({
                 "role": role,
