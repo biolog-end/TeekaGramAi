@@ -1,3 +1,4 @@
+/* --- ИЗМЕНЕН ФАЙЛ --- */
 :root {
     --bg-gradient-start: #fffdf6; 
     --bg-gradient-end: #fff9e6;   
@@ -178,24 +179,20 @@ button:disabled {
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
 }
 
-button[type="submit"],
-#generate-button
+button[type="submit"]
 {
     background-color: var(--button-primary-bg);
     color: var(--button-primary-text);
 }
-button[type="submit"]:hover:not(:disabled),
-#generate-button:hover:not(:disabled)
+button[type="submit"]:hover:not(:disabled)
  {
     background-color: var(--button-primary-hover);
 }
-button[type="submit"]:disabled,
-#generate-button:disabled {
+button[type="submit"]:disabled {
      background-color: var(--button-primary-bg); 
 }
 
-.update-history-form button,
-form[action*="save_prompt"] button
+.update-history-form button
 {
     background-color: var(--button-secondary-bg);
     color: var(--button-secondary-text);
@@ -203,8 +200,7 @@ form[action*="save_prompt"] button
     font-size: 0.9em;
 }
 
-.update-history-form button:hover,
-form[action*="save_prompt"] button:hover
+.update-history-form button:hover
 {
     background-color: var(--button-secondary-hover);
 }
@@ -614,10 +610,6 @@ small {
     opacity: 0.8;
 }
 
-#generate-form {
-    position: relative;
-}
-
 .loading-spinner {
     border: 4px solid rgba(255, 255, 255, 0.3); 
     border-left-color: var(--button-primary-text);
@@ -693,55 +685,8 @@ small {
     .back-link-container a { font-size: 1em; }
 }
 
-/* --- Общий заголовок блока генерации и переключатель --- */
-.generation-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 2px solid var(--border-color);
-}
-.generation-header h2 {
-    border: none;
-    margin: 0;
-    padding: 0;
-}
 
-/* Форма-контейнер для кнопок-переключателей */
-.mode-switcher-form {
-    display: flex;
-    background-color: var(--bg-gradient-end);
-    border-radius: var(--border-radius-medium);
-    padding: 5px;
-    border: 1px solid var(--border-color);
-}
-
-.switch-button {
-    border: none;
-    padding: 10px 20px;
-    font-size: 0.9em;
-    font-weight: 600;
-    cursor: pointer;
-    background-color: transparent;
-    color: var(--text-color);
-    border-radius: var(--border-radius-small);
-    transition: all 0.3s ease;
-    box-shadow: none;
-}
-.switch-button:hover {
-    background-color: rgba(255, 255, 255, 0.7);
-    transform: none; /* Отключаем прыжок при наведении */
-}
-.switch-button.active {
-    background-color: var(--card-bg-color);
-    color: var(--primary-accent-color);
-    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-}
-
-/* --- Общие стили для секций в режиме персонажа --- */
+/* --- Общие стили для секций управления персонажем --- */
 .character-management-section,
 .character-editor-section,
 .character-actions-section {
@@ -783,6 +728,10 @@ small {
     border-left-color: #ef9a9a; /* error */
     background-color: #fff6f6;
 }
+.context-field {
+    border-left-color: #b39ddb; /* purple */
+    background-color: #f6f3f9;
+}
 
 /* Улучшенная кнопка создания персонажа */
 .character-creator button.button-success {
@@ -802,17 +751,17 @@ small {
     background-color: var(--primary-accent-hover) !important;
 }
 
-/* --- Контейнер для кнопок в режиме "Промпт" --- */
-.form-actions {
-    display: flex;
-    gap: 15px;
-    align-items: center;
-    margin-top: 15px;
+.generation-header {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid var(--border-color);
 }
-.inline-form {
-    display: inline;
+.generation-header h2 {
+    border: none;
     margin: 0;
+    padding: 0;
 }
+
 .button-secondary {
     background-color: var(--button-secondary-bg);
     color: var(--button-secondary-text);
@@ -822,7 +771,7 @@ small {
     background-color: var(--button-secondary-hover);
 }
 
-/* Обновление старых стилей для лучшего сочетания */
+/* Обновление стилей для лучшего сочетания */
 .character-management {
     display: flex;
     flex-wrap: wrap;

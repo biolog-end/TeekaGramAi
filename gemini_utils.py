@@ -13,7 +13,7 @@ import base64
 init(autoreset=True)
 
 GENERATION_LOG_FILE = "generation_log.txt"
-BASE_GEMENI_MODEL = os.getenv("DEFAULT_GEMINI_MODEL", "gemini-2.0-flash-001")
+BASE_GEMENI_MODEL = os.getenv("DEFAULT_GEMINI_MODEL", "gemini-2.0-flash")
 
 gemini_client = None
 
@@ -59,11 +59,11 @@ def init_gemini_client():
 
 def generate_chat_reply_original(model_name, system_prompt, chat_history, config=None):
     """
-    Генерирует ответ на основе истории чата Telegram, используя логику
-    из предоставленной функции generate_tuned_comment и твои последние исправления.
+    Генерирует ответ на основе истории чата Telegram.
+    Версия без специальной логики для тюнингованных моделей.
 
     Args:
-        model_name (str): Имя модели Gemini (e.g., 'gemini-2.0-flash-001' or 'tunedModels/your-model-id').
+        model_name (str): Имя модели Gemini (e.g., 'gemini-2.0-flash').
         system_prompt (str | None): Системная инструкция.
         chat_history (list): Список сообщений из Telegram в формате [{'role': 'user'/'model', 'parts': [{'text': ...}]}].
         config (types.GenerateContentConfig | None): Конфигурация с доп. параметрами (tools, thinking_config).
@@ -81,8 +81,13 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         logging.warning("История чата пуста. Нечего отправлять модели.")
         return None, "История чата пуста."
 
-    history_for_api = list(chat_history)
+    if not model_name:
+        model_name = BASE_GEMENI_MODEL
+        logging.info(f"Имя модели не указано, используется по умолчанию: {model_name}")
 
+    logging.info(f"Используемое имя модели для API: {model_name}")
+
+    history_for_api = list(chat_history)
     if history_for_api and history_for_api[-1].get('role') == 'model':
         logging.info(Fore.CYAN + "Последнее сообщение от 'model'. Добавляем фиктивное сообщение 'user' для запроса к API.")
         dummy_user_message = {
@@ -91,13 +96,7 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         }
         history_for_api.append(dummy_user_message)
     chat_history = history_for_api
-    original_model_name_input = model_name
-    if not model_name:
-        model_name = BASE_GEMENI_MODEL
-        logging.info(f"Имя модели не указано, используется по умолчанию: {model_name}")
-    is_tuned_model = model_name.startswith("tunedModels/")
-    logging.info(f"Используемое имя модели для API: {model_name} (Тюнингованная: {is_tuned_model})")
-
+    
     contents_list = []
     try:
         for msg_data in chat_history:
@@ -109,7 +108,6 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
 
             api_parts = []
             for part_item in parts_data:
-                # Сначала текст
                 if 'text' in part_item and part_item.get('text'):
                     api_parts.append(types.Part.from_text(text=part_item['text']))
                 
@@ -172,20 +170,13 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
     api_args = { "model": model_name, "contents": contents_list, }
     system_instruction_text_to_log = None
 
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-
-    # Сразу определяем основной объект конфигурации.
-    # Если config уже является нужным нам объектом GenerateContentConfig, используем его.
     if isinstance(config, types.GenerateContentConfig):
         generation_config_to_use = config
         logging.info("Используется переданный объект GenerateContentConfig.")
     else:
-        # В противном случае, создаем новый объект.
         generation_config_to_use = types.GenerateContentConfig()
-        # И пытаемся заполнить его из старых форматов (dict или GenerationConfig).
         if isinstance(config, dict) and config:
             try:
-                # Параметры вроде temperature/top_p находятся во вложенном объекте
                 generation_config_to_use.generation_config = types.GenerationConfig(**config)
                 logging.info(f"Параметры генерации из словаря {config} применены.")
             except Exception as cfg_err:
@@ -196,49 +187,25 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         else:
             logging.info("Используется конфигурация генерации по умолчанию.")
 
-    # Мы больше не нуждаемся в переменной base_gen_config_obj, так как
-    # generation_config_to_use теперь наша единственная и основная конфигурация.
-
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-
-
     if system_prompt:
-        now = datetime.datetime.now()
-        time_suffix = f"\n сегодня {now.strftime('%Y-%m-%d %H:%M:%S')}"
-        system_prompt += time_suffix
-        if is_tuned_model:
-            logging.info(Fore.CYAN + "Модель тюнингованная: системный промпт добавляется в историю.")
-            system_message = {"role": "user", "parts": [{"text": system_prompt}]}
-            contents_list.append(types.Content(**system_message))
-            api_args["contents"] = contents_list
+        logging.info(Fore.CYAN + "Системный промпт передается через GenerateContentConfig.")
+        try:
+            generation_config_to_use.system_instruction = [types.Part.from_text(text=system_prompt)]
             system_instruction_text_to_log = system_prompt
-        else:
-            logging.info(Fore.CYAN + "Модель базовая: системный промпт передается через GenerateContentConfig.")
-            try:
-                # Теперь мы просто изменяем существующий объект, а не переприсваиваем его
-                generation_config_to_use.system_instruction = [types.Part.from_text(text=system_prompt)]
-                system_instruction_text_to_log = system_prompt
-            except Exception as sys_cfg_err:
-                logging.error(f"Ошибка добавления system_instruction: {sys_cfg_err}", exc_info=True)
-                system_instruction_text_to_log = "[ОШИБКА СОЗДАНИЯ]"
+        except Exception as sys_cfg_err:
+            logging.error(f"Ошибка добавления system_instruction: {sys_cfg_err}", exc_info=True)
+            system_instruction_text_to_log = "[ОШИБКА СОЗДАНИЯ]"
     else:
-        # Это присваивание больше не нужно, так как generation_config_to_use уже инициализирован выше.
-        # generation_config_to_use = base_gen_config_obj
         system_instruction_text_to_log = None
     
-    if not is_tuned_model:
-        should_add_config = generation_config_to_use and (
-            (hasattr(generation_config_to_use, 'temperature') and generation_config_to_use.temperature is not None) or
-            (hasattr(generation_config_to_use, 'top_p') and generation_config_to_use.top_p is not None) or
-            (hasattr(generation_config_to_use, 'top_k') and generation_config_to_use.top_k is not None) or
-            (hasattr(generation_config_to_use, 'system_instruction') and generation_config_to_use.system_instruction) or
-            (hasattr(generation_config_to_use, 'tools') and generation_config_to_use.tools) or
-            (hasattr(generation_config_to_use, 'thinking_config') and generation_config_to_use.thinking_config)
-        )
-        if should_add_config:
-            api_args["config"] = generation_config_to_use
-    else:
-        api_args.pop("config", None)
+    should_add_config = generation_config_to_use and (
+        (hasattr(generation_config_to_use, 'generation_config') and generation_config_to_use.generation_config) or
+        (hasattr(generation_config_to_use, 'system_instruction') and generation_config_to_use.system_instruction) or
+        (hasattr(generation_config_to_use, 'tools') and generation_config_to_use.tools) or
+        (hasattr(generation_config_to_use, 'thinking_config') and generation_config_to_use.thinking_config)
+    )
+    if should_add_config:
+        api_args["config"] = generation_config_to_use
     
     try:
         if api_args.get("config"):
@@ -334,7 +301,8 @@ def generate_chat_reply_original(model_name, system_prompt, chat_history, config
         except Exception as inner_e:
             logging.warning(Fore.YELLOW + f"Дополнительная ошибка при извлечении e.message: {inner_e}")
         suffix = " (Проверьте логи и generation_log.txt)"
+
         if model_name in str(e) or model_name in error_message:
             if not error_message.endswith(suffix):
                 error_message += suffix
-        return None, f"Ошибка модели '{original_model_name_input}': {error_message}"
+        return None, f"Ошибка модели '{model_name}': {error_message}"

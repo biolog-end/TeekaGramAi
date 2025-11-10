@@ -4,7 +4,7 @@ import random
 import string
 import emoji
 import json  
-from telethon import TelegramClient, errors, functions, events 
+from telethon import TelegramClient, errors, functions, events
 from telethon.tl.functions.users import GetFullUserRequest 
 from telethon.tl.functions.account import UpdateStatusRequest
 from telethon.tl.types import (
@@ -14,7 +14,7 @@ from telethon.tl.types import (
     MessageService, DocumentAttributeVideo, DocumentAttributeAudio, DocumentAttributeSticker,
     SendMessageTypingAction, SendMessageRecordAudioAction, SendMessageRecordVideoAction,
     UserStatusOnline, UserStatusOffline, UserStatusRecently, UserStatusLastWeek, UserStatusLastMonth,
-    InputDocument, SendMessageChooseStickerAction  
+    InputDocument, SendMessageChooseStickerAction, ReactionEmoji
 
 )
 from datetime import timedelta, datetime 
@@ -34,6 +34,38 @@ MESSAGE_MEDIA_CACHE = {}
 STICKER_DB = {}
 STICKER_ID_TO_CODENAME = {}
 STICKER_JSON_FILE = 'data/stickers.json'
+
+async def send_telegram_reaction(chat_id, message_id, emoji):
+    """
+    Отправляет реакцию на конкретное сообщение.
+    Возвращает (bool: success, str: error_message | None).
+    """
+    if not client or not client.is_connected():
+        return False, "Telegram client not connected."
+
+    try:
+        logging.info(f"Попытка поставить реакцию '{emoji}' на сообщение {message_id} в чате {chat_id}.")
+        
+        await client(functions.messages.SendReactionRequest(
+            peer=chat_id,
+            msg_id=message_id,
+            reaction=[ReactionEmoji(emoticon=emoji)]  
+        ))
+
+        logging.info(f"Реакция '{emoji}' успешно поставлена.")
+        return True, None
+    except errors.MessageIdInvalidError:
+        logging.warning(f"Не удалось поставить реакцию: сообщение с ID {message_id} не найдено в чате {chat_id}.")
+        return True, f"Message ID {message_id} not found (skipped)."
+    except errors.ReactionInvalidError:
+        logging.error(f"Не удалось поставить реакцию: эмодзи '{emoji}' не является валидной реакцией в этом чате.")
+        return True, f"Emoji '{emoji}' is not a valid reaction (skipped)."
+    except errors.ChatAdminRequiredError:
+         logging.warning(f"Не удалось поставить реакцию в чате {chat_id}: нет прав администратора для отправки реакций.")
+         return True, "No permission to send reactions in this chat (skipped)."
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при отправке реакции: {e}", exc_info=True)
+        return False, f"An unexpected error occurred while sending reaction: {e}"
 
 def load_sticker_db():
     """
@@ -330,6 +362,8 @@ def final_fine_tune_sms(comment: str,
 
     cleaned_comment = comment.replace('&quot;', '"')
 
+    cleaned_comment = cleaned_comment.replace('—', '-')
+
     nickname_tag_pattern = r"<\s*ник\s*:.*?>"
     cleaned_comment = re.sub(nickname_tag_pattern, '', cleaned_comment, flags=re.IGNORECASE)
 
@@ -570,7 +604,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
 
                 if mime_type == 'image/jpeg':
                     can_see = settings.get('can_see_photos', True)
-                    placeholder = "[Изображение] - не удалось загрузить"
+                    placeholder = "" #[Изображение] - не удалось загрузит＃
                 elif mime_type == 'video/mp4':
                     can_see = settings.get('can_see_videos', True)
                     placeholder = "[Видео] - не удалось загрузить"
@@ -604,7 +638,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                             }]
                             media_processed_to_base64 = True
                     else:
-                        content_text = "[Изображение]- не удалось загрузить"
+                        content_text = "" #[Изображение]- не удалось загрузить
                         is_media_message = False
 
                 elif isinstance(msg.media, MessageMediaDocument):

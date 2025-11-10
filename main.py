@@ -31,7 +31,8 @@ from telegram_utils import (
     telegram_main_loop, 
     run_in_telegram_loop,
     STICKER_DB,
-    send_sticker_by_codename
+    send_sticker_by_codename,
+    send_telegram_reaction
 )
 from gemini_utils import (
     init_gemini_client,
@@ -55,15 +56,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 app = Flask(__name__)
 app.config['SESSION_COOKIE_NAME'] = 'telegram_bot_session_1'
 app.url_map.converters['sint'] = SignedIntConverter
-app.secret_key = "super-secret-key-for-bot-alpha-9a8b7c"#os.getenv('FLASK_SECRET_KEY', os.urandom(24)) 
+app.secret_key = "super-secret-key-for-bot-alpha-9a8b7c"#os.urandom(24)
 
-DEFAULT_SYSTEM_PROMPT = """
-Чтобы написать сразу несколько коротких сообщений, разделяй их используя ключевое слово {split}
-Чтобы твоё сообщение было ответом на сообщение собеседника пиши в начале сообщения ключевое слово answer(ID реального сообщения собеседника на которое хочешь дать свой ответ)
-"""
 ACCOUNTS_JSON_FILE = 'data/accounts.json'
 DEFAULT_SESSION_NAME = 'kadzu'
-PROMPT_STORAGE_FILE = 'data/system_prompts.json'
 CHAT_SETTINGS_FILE = 'data/chat_settings.json'
 STICKER_JSON_FILE = 'data/stickers.json'
 CHARTS_LIMIT = 120
@@ -83,6 +79,8 @@ DEFAULT_CHAT_SETTINGS = {
     "model_name": "", 
     "enable_google_search": False,
     "enable_thinking": False,
+    # Настройки памяти
+    "enable_auto_memory": True,
     # Для медиа
     "can_see_photos": True,
     "can_see_videos": True,
@@ -175,11 +173,8 @@ def choose_account_from_console(account_choice_arg=None):
 def load_chat_settings():
     """Загружает все сохраненные настройки чатов из JSON файла."""
     try:
-        
         if os.path.exists(CHAT_SETTINGS_FILE):
             with open(CHAT_SETTINGS_FILE, 'r', encoding='utf-8') as f:
-        
-                # Конвертируем ключи обратно в int
                 return {int(k): v for k, v in json.load(f).items()}
         return {}
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
@@ -189,69 +184,56 @@ def load_chat_settings():
 def save_chat_settings(settings_dict):
     """Сохраняет словарь настроек чатов в JSON файл."""
     try:
-        
         os.makedirs(os.path.dirname(CHAT_SETTINGS_FILE), exist_ok=True)
-        with open(CHAT_SETTINGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(settings_dict, f, ensure_ascii=False, indent=4)
         
+        settings_to_save = {str(k): v for k, v in settings_dict.items()}
+        with open(CHAT_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings_to_save, f, ensure_ascii=False, indent=4)
     except IOError as e:
         logging.error(f"Ошибка сохранения файла настроек ({CHAT_SETTINGS_FILE}): {e}")
-        flash("Не удалось сохранить настройки в файл.", "error")
 
 def get_chat_settings(chat_id):
     """
-    Получает настройки для конкретного чата.
-    Если для чата нет сохраненных настроек, возвращает настройки по умолчанию.
-    Если есть, объединяет их с настройками по умолчанию (чтобы новые ключи настроек подхватывались).
+    Получает настройки для конкретного чата с учетом иерархии:
+    1. Базовые дефолты.
+    2. Настройки по умолчанию для активного персонажа.
+    3. Специфичные настройки для этого персонажа в этом чате.
     """
-    all_settings = load_chat_settings()
-    chat_specific_settings = all_settings.get(chat_id)
-
-    # Создаем копию настроек по умолчанию, чтобы не изменять оригинал
     final_settings = DEFAULT_CHAT_SETTINGS.copy()
 
-    # Добавляем новые настройки для режимов
-    final_settings['generation_mode'] = 'prompt' # 'prompt' или 'character'
-    final_settings['active_character_id'] = None
+    all_chat_settings = load_chat_settings()
+    chat_specific_settings = all_chat_settings.get(chat_id, {})
 
-    if chat_specific_settings:
-        # Обновляем значения по умолчанию сохраненными, если они есть
-        final_settings.update(chat_specific_settings)
+    active_character_id = chat_specific_settings.get('active_character_id')
+    final_settings['active_character_id'] = active_character_id
+
+    if active_character_id:
+        character_data = character_utils.get_character(active_character_id)
+        if character_data:
+            char_defaults = character_data.get('advanced_settings', {})
+            final_settings.update(char_defaults)
+
+            char_in_chat_specifics = chat_specific_settings.get('character_specifics', {}).get(active_character_id, {})
+            
+            final_settings['chat_context_prompt'] = char_in_chat_specifics.get('chat_context_prompt', '')
+            
+            char_in_chat_advanced = char_in_chat_specifics.get('advanced_settings', {})
+            final_settings.update(char_in_chat_advanced)
 
     return final_settings
 
-def load_prompts():
-    """Загружает сохраненные системные промпты из JSON файла."""
-    try:
-        if os.path.exists(PROMPT_STORAGE_FILE):
-            with open(PROMPT_STORAGE_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return {int(k): v for k, v in data.items()}
-        return {}
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        logging.warning(f"Не удалось загрузить файл промптов ({PROMPT_STORAGE_FILE}): {e}. Будет использован пустой словарь.")
-        return {}
 
-def save_prompts(prompts_dict):
-    """Сохраняет словарь системных промптов в JSON файл."""
-    try:
-        with open(PROMPT_STORAGE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(prompts_dict, f, ensure_ascii=False, indent=4)
-    except IOError as e:
-        logging.error(f"Ошибка сохранения файла промптов ({PROMPT_STORAGE_FILE}): {e}")
-        flash("Не удалось сохранить системный промпт в файл.", "error")
-
-def generate_sticker_prompt():
+def generate_sticker_prompt(enabled_sticker_packs: list) -> str:
     """
-    Создает строку-инструкцию и список доступных стикеров для системного промпта.
+    Создает строку-инструкцию для Gemini на основе ВЫБРАННЫХ стикеров.
     """
-    BASE_STICKER_PROMPT = "Чтобы отправить стикер, используй команду sticker(кодовое_имя_из_списка_ниже)."
-    if not STICKER_DB:
-        return "" 
+    if not STICKER_DB or not enabled_sticker_packs:
+        return ""
 
     available_stickers_lines = []
-    for codename, data in sorted(STICKER_DB.items()):
-        if data.get("enabled"):
+    for codename in sorted(enabled_sticker_packs):
+        data = STICKER_DB.get(codename)
+        if data:
             line = f"- {codename}"
             if data.get("description"):
                 line += f": {data['description']}"
@@ -260,7 +242,11 @@ def generate_sticker_prompt():
     if not available_stickers_lines:
         return "" 
 
-    full_prompt = BASE_STICKER_PROMPT + "\n\nДоступные стикеры:\n" + "\n".join(available_stickers_lines)
+    full_prompt = (
+        "Чтобы отправить стикер, используй команду sticker(кодовое_имя_из_списка_ниже).\n\n"
+        "Доступные стикеры:\n"
+        f"{'\n'.join(available_stickers_lines)}"
+    )
     return full_prompt
 
 def load_sticker_data():
@@ -428,9 +414,9 @@ def split_message_by_limit(text: str, limit: int) -> list[str]:
 def send_generated_reply(chat_id: int, message_text: str, settings: dict = None):
     """
     Централизованная функция для отправки сгенерированного ответа.
-    Обрабатывает разделитель {split}, команды sticker() и смешанный контент.
-    ИЗМЕНЕНО: Принимает необязательный словарь настроек.
+    Обрабатывает команды react(), разделитель {split}, команды sticker() и смешанный контент.
     """
+
     if not message_text or not message_text.strip():
         logging.warning(f"В send_generated_reply передано пустое сообщение для чата {chat_id}.")
         return True, "Empty message provided."
@@ -442,58 +428,88 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
         logging.debug(f"send_generated_reply: используются переданные настройки для чата {chat_id}")
         settings_to_use = settings
 
+    VALID_REACTIONS = ['👍', '❤️', '🔥', '🎉', '🤩', '😱', '😁', '😢', '🤔', '👎', '💩', '🤔']
+
+    reaction_tasks = []
+    if 'react' in message_text: 
+        react_pattern_with_id = re.compile(r"react\s*\(\s*(\d+)\s*\)\s*(?:\[([^\]\n]+?)\]|([^\s\w\d,.<>{|}]+))", re.IGNORECASE)
+        
+        matches = list(react_pattern_with_id.finditer(message_text))
+        for match in matches:
+            msg_id_str = match.group(1)
+            emoji_str = match.group(2) or match.group(3)
+
+            if not emoji_str: continue
+            
+            try:
+                msg_id = int(msg_id_str)
+            except ValueError:
+                logging.warning(f"Невалидный ID сообщения '{msg_id_str}' в команде реакции. Пропуск.")
+                continue
+
+            if emoji_str not in VALID_REACTIONS:
+                new_emoji = random.choice(VALID_REACTIONS)
+                logging.warning(f"Невалидный эмодзи для реакции '{emoji_str}'. Заменен на случайный: '{new_emoji}'.")
+                emoji_str = new_emoji
+            
+            reaction_tasks.append({"type": "reaction", "message_id": msg_id, "emoji": emoji_str})
+
+        message_text = re.sub(r'react\s*\(\s*\d+\s*\)\s*(?:\[[^\]\n]+?\]|[^\s\w\d,.<>{|}]+)\s*', '', message_text, flags=re.IGNORECASE).strip()
+        message_text = re.sub(r'react\s*\[[^\]\n]+?\]', '', message_text, flags=re.IGNORECASE).strip()
+
+    if not message_text.strip() and not reaction_tasks:
+        logging.warning(f"В send_generated_reply для чата {chat_id} не осталось ни текста, ни задач на реакцию. Отправка отменена.")
+        return True, "Empty message and no reaction tasks."
+
+
     sticker_pattern = r"sticker\s*\(([\w\d_-]+)\)"
     split_separator = "{split}"
 
-    initial_parts = [p.strip() for p in message_text.split(split_separator) if p.strip()]
-    
     tasks_to_send = []
-    for part in initial_parts:
-        # Эта логика остается прежней: сначала ищем и отделяем стикеры
-        found_stickers = list(re.finditer(sticker_pattern, part, re.IGNORECASE))
+    tasks_to_send.extend(reaction_tasks)
+    
+    if message_text.strip():
+        initial_parts = [p.strip() for p in message_text.split(split_separator) if p.strip()]
         
-        if not found_stickers:
-            # Если стикеров нет, проверяем длину текстовой части
-            if len(part) > TELEGRAM_MAX_MESSAGE_LENGTH:
-                # Если текст слишком длинный, разбиваем его на части
-                text_chunks = split_message_by_limit(part, TELEGRAM_MAX_MESSAGE_LENGTH)
-                for chunk in text_chunks:
-                    tasks_to_send.append({"type": "text", "content": chunk})
-            else:
-                # Если длина в норме, добавляем как есть
-                tasks_to_send.append({"type": "text", "content": part})
-            continue
-
-        # Эта логика тоже остается: обрабатываем смешанный контент из текста и стикеров
-        last_index = 0
-        for match in found_stickers:
-            start, end = match.span()
-            if start > last_index:
-                text_before = part[last_index:start].strip()
-                if text_before:
-                    # Проверяем на длину КАЖДЫЙ текстовый блок между стикерами
-                    if len(text_before) > TELEGRAM_MAX_MESSAGE_LENGTH:
-                        text_chunks = split_message_by_limit(text_before, TELEGRAM_MAX_MESSAGE_LENGTH)
-                        for chunk in text_chunks:
-                            tasks_to_send.append({"type": "text", "content": chunk})
-                    else:
-                        tasks_to_send.append({"type": "text", "content": text_before})
-
-            codename = match.group(1)
-            tasks_to_send.append({"type": "sticker", "content": codename})
+        for part in initial_parts:
+            found_stickers = list(re.finditer(sticker_pattern, part, re.IGNORECASE))
             
-            last_index = end
-        
-        if last_index < len(part):
-            text_after = part[last_index:].strip()
-            if text_after:
-                 # И, конечно, проверяем последний текстовый блок после всех стикеров
-                 if len(text_after) > TELEGRAM_MAX_MESSAGE_LENGTH:
-                    text_chunks = split_message_by_limit(text_after, TELEGRAM_MAX_MESSAGE_LENGTH)
+            if not found_stickers:
+                if len(part) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                    text_chunks = split_message_by_limit(part, TELEGRAM_MAX_MESSAGE_LENGTH)
                     for chunk in text_chunks:
                         tasks_to_send.append({"type": "text", "content": chunk})
-                 else:
-                    tasks_to_send.append({"type": "text", "content": text_after})
+                else:
+                    tasks_to_send.append({"type": "text", "content": part})
+                continue
+
+            last_index = 0
+            for match in found_stickers:
+                start, end = match.span()
+                if start > last_index:
+                    text_before = part[last_index:start].strip()
+                    if text_before:
+                        if len(text_before) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                            text_chunks = split_message_by_limit(text_before, TELEGRAM_MAX_MESSAGE_LENGTH)
+                            for chunk in text_chunks:
+                                tasks_to_send.append({"type": "text", "content": chunk})
+                        else:
+                            tasks_to_send.append({"type": "text", "content": text_before})
+
+                codename = match.group(1)
+                tasks_to_send.append({"type": "sticker", "content": codename})
+                
+                last_index = end
+            
+            if last_index < len(part):
+                text_after = part[last_index:].strip()
+                if text_after:
+                     if len(text_after) > TELEGRAM_MAX_MESSAGE_LENGTH:
+                        text_chunks = split_message_by_limit(text_after, TELEGRAM_MAX_MESSAGE_LENGTH)
+                        for chunk in text_chunks:
+                            tasks_to_send.append({"type": "text", "content": chunk})
+                     else:
+                        tasks_to_send.append({"type": "text", "content": text_after})
 
     logging.info(f"Будет выполнено {len(tasks_to_send)} задач на отправку в чат {chat_id}.")
     
@@ -516,6 +532,15 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
             if success and error_message:
                 logging.warning(f"Задача отправки стикера '{task['content']}' пропущена: {error_message}")
         
+        elif task["type"] == "reaction":
+            logging.info(f"Отправка реакции '{task['emoji']}' на сообщение {task['message_id']} в чат {chat_id}.")
+            success, error_message = run_in_telegram_loop(
+                send_telegram_reaction(chat_id, task["message_id"], task["emoji"])
+            )
+            if success and error_message:
+                logging.warning(f"Задача отправки реакции '{task['emoji']}' пропущена: {error_message}")
+
+
         if not success:
             all_success = False
             logging.error(f"Ошибка отправки задачи {i+1} ({task['type']}) в чат {chat_id}: {error_message}")
@@ -524,17 +549,21 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
             break 
 
         if i < len(tasks_to_send) - 1:
-            min_pause = settings_to_use.get('base_thinking_delay_s_min', 1.0)
-            max_pause = settings_to_use.get('base_thinking_delay_s_max', 2.0)
+            delay = 0.0
+            current_type = task["type"]
+            next_type = tasks_to_send[i+1]["type"]
 
-            
-            if max_pause < min_pause:
-                max_pause = min_pause
-
-            delay = random.uniform(min_pause, max_pause)
-            
-            if delay > 0.05: 
+            if current_type == "reaction" and next_type == "reaction":
+                delay = random.uniform(0.3, 0.8)
+                logging.info(f"Короткая пауза между реакциями: {delay:.2f} сек.")
+            else:
+                min_pause = settings_to_use.get('base_thinking_delay_s_min', 1.0)
+                max_pause = settings_to_use.get('base_thinking_delay_s_max', 2.0)
+                if max_pause < min_pause: max_pause = min_pause
+                delay = random.uniform(min_pause, max_pause)
                 logging.info(f"Пауза перед следующей частью: {delay:.2f} сек.")
+            
+            if delay > 0.05:
                 time.sleep(delay)
 
     return all_success, first_error_message
@@ -546,13 +575,13 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
     сбрасывается. Ответ генерируется только тогда, когда пользователь
     перестает отправлять сообщения.
     Также управляет автоматическим обновлением памяти персонажа.
-    """
-    global auto_mode_workers, auto_mode_lock, load_prompts, DEFAULT_SYSTEM_PROMPT
+    """ 
+    global auto_mode_workers, auto_mode_lock
     global BASE_GEMENI_MODEL
     global run_in_telegram_loop, get_formatted_history, generate_chat_reply_original, character_utils
 
     worker_name = f"AutoMode-{chat_id}"
-    logging.info(f"[{worker_name}] Поток запущен с логикой ожидания новых сообщений.")
+    logging.info(f"[{worker_name}] Поток запущен.")
 
     last_processed_user_msg_time = None
     last_own_message_sent_time = datetime.now()
@@ -562,19 +591,26 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
         base_chat_settings = get_chat_settings(chat_id)
         settings_for_generation = base_chat_settings.copy() 
 
-        generation_mode = base_chat_settings.get('generation_mode')
-        
-        if generation_mode == 'character':
-            character_id = base_chat_settings.get('active_character_id')
-            if character_id:
-                character_data = character_utils.get_character(character_id)
-                if character_data and character_data.get('advanced_settings'):
-                    logging.debug(f"[{worker_name}] Применяются персональные настройки поверх настроек чата.")
-                    settings_for_generation.update(character_data['advanced_settings'])
+        character_id = base_chat_settings.get('active_character_id')
+        if not character_id:
+            logging.warning(f"[{worker_name}] В чате не выбран активный персонаж. Авто-режим приостановлен. Пауза 60 сек.")
+            stop_event.wait(60)
+            continue
+            
+        character_data = character_utils.get_character(character_id)
+        if not character_data:
+            logging.error(f"[{worker_name}] Не найдены данные для персонажа {character_id}. Авто-режим приостановлен. Пауза 60 сек.")
+            stop_event.wait(60)
+            continue
+            
+        if character_data.get('advanced_settings'):
+            logging.debug(f"[{worker_name}] Применяются персональные настройки поверх настроек чата.")
+            settings_for_generation.update(character_data['advanced_settings'])
         
         check_interval = settings_for_generation.get('auto_mode_check_interval', DEFAULT_CHAT_SETTINGS['auto_mode_check_interval'])
 
         try:
+            
             with auto_mode_lock:
                  current_status = auto_mode_workers.get(chat_id, {}).get("status", "inactive")
             if current_status != "active":
@@ -634,42 +670,19 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                          last_processed_user_msg_time = latest_message_time
 
             if should_generate:
+                chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id)) # Получаем инфо о чате
+                
                 model_name_from_settings = settings_for_generation.get('model_name', '')
                 model_name_to_use = model_name_from_settings or BASE_GEMENI_MODEL
-
-                logging.info(f"[{worker_name}] [DEBUG-SETTINGS] Используются следующие настройки генерации: {settings_for_generation}")
-
-                if generation_mode == 'character':
-                    character_id = base_chat_settings.get('active_character_id')
-                    if character_id:
-                        character_data = character_utils.get_character(character_id)
-                        if character_data:
-                            logging.info(f"[{worker_name}] Работа в режиме 'Персонаж': {character_data.get('name')}")
-                            sticker_prompt = generate_sticker_prompt() 
-                            final_system_prompt = character_utils.get_full_prompt_for_character(character_id, sticker_prompt)
-                        else:
-                            logging.error(f"[{worker_name}] Режим 'Персонаж', но данные для ID {character_id} не найдены. Откат к режиму 'Промпт'.")
-                            generation_mode = 'prompt'
-                    else:
-                        logging.warning(f"[{worker_name}] Режим 'Персонаж', но ID не выбран. Откат к режиму 'Промпт'.")
-                        generation_mode = 'prompt'
-
-                if generation_mode == 'prompt':
-                    logging.info(f"[{worker_name}] Работа в режиме 'Промпт'.")
-                    all_prompts = load_prompts()
-                    prompt_parts = [all_prompts.get(chat_id, DEFAULT_SYSTEM_PROMPT)]
-                    if chat_id not in all_prompts:
-                        sticker_prompt = generate_sticker_prompt()
-                        if sticker_prompt: prompt_parts.append(sticker_prompt)
-                    final_system_prompt = "\n\n".join(p.strip() for p in prompt_parts if p.strip())
-
-                if settings_for_generation.get('add_chat_name_prefix', True):
-                    chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id))
-                    if chat_info:
-                        chat_name = chat_info.get('name', str(chat_id))
-                        is_group = chat_id < 0
-                        prefix = f"Это чат в группе '{chat_name}'.\n\n" if is_group else f"Это чат с '{chat_name}'.\n\n"
-                        final_system_prompt = prefix + final_system_prompt
+                
+                logging.info(f"[{worker_name}] Работа от лица персонажа: {character_data.get('name')}")
+                
+                final_system_prompt = character_utils.get_full_prompt_for_character(
+                    character_id, 
+                    chat_name=chat_info.get('name', str(chat_id)),
+                    is_group=(chat_id < 0),
+                    chat_context_prompt=settings_for_generation.get('chat_context_prompt')
+                )
 
                 if is_timeout_trigger:
                     no_reply_suffix = settings_for_generation.get('auto_mode_no_reply_suffix', DEFAULT_CHAT_SETTINGS['auto_mode_no_reply_suffix'])
@@ -682,8 +695,9 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                     logging.error(f"[{worker_name}] Ошибка получения истории для генерации: {history_error}. Пропуск.")
                     stop_event.wait(15)
                     continue
-
-                if generation_mode == 'character' and base_chat_settings.get('active_character_id'):
+                
+                # --- БЛОК АВТО-ПАМЯТИ С ПРОВЕРКОЙ ---
+                if settings_for_generation.get('enable_auto_memory', True):
                     with auto_mode_lock:
                         bot_last_message_anchor = auto_mode_workers.get(chat_id, {}).get("bot_last_message_anchor")
                     def find_last_bot_message_text(history):
@@ -702,8 +716,6 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                         anchor_is_visible = any( part.get("text") == bot_last_message_anchor for msg in full_history if msg.get("role") == "model" for part in msg.get("parts", []) if "text" in part )
                         if not anchor_is_visible:
                             logging.info(f"[{worker_name}] Авто-память: Якорь '{bot_last_message_anchor[:50]}...' больше не виден. Запуск обновления памяти.")
-                            character_id = base_chat_settings.get('active_character_id')
-                            chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id))
                             _, mem_update_error = character_utils.update_character_memory(
                                 character_id=character_id, chat_name=chat_info.get('name', str(chat_id)),
                                 is_group=chat_id < 0, chat_history=full_history
@@ -716,10 +728,13 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                                 with auto_mode_lock:
                                     if chat_id in auto_mode_workers: auto_mode_workers[chat_id]["bot_last_message_anchor"] = new_anchor_text
                                 logging.info(f"[{worker_name}] Авто-память: Установлен новый якорь: '{new_anchor_text[:50] if new_anchor_text else 'None'}'")
+                else:
+                    logging.info(f"[{worker_name}] Авто-память отключена в настройках персонажа. Пропуск обновления.")
+                # --- КОНЕЦ БЛОКА АВТО-ПАМЯТИ ---
+
                 tools = []
                 if settings_for_generation.get('enable_google_search', False):
-                    tools.append(#types.Tool(url_context=types.UrlContext()),
-                                 types.Tool(googleSearch=types.GoogleSearch()))
+                    tools.append(types.Tool(googleSearch=types.GoogleSearch()))
 
                 thinking_config = None
                 thinking_models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
@@ -751,7 +766,6 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                     stop_event.wait(20)
                 elif generated_text and generated_text.strip():
                     logging.info(f"[{worker_name}] Ответ сгенерирован. Отправка...")
-                    
                     success, error_msg = send_generated_reply(chat_id, generated_text.strip(), settings=settings_for_generation)
                     if success:
                         logging.info(f"[{worker_name}] Ответ успешно отправлен.")
@@ -763,7 +777,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
             
             if not should_generate:
                 stop_event.wait(check_interval)
-
+        
         except Exception as e:
             logging.exception(f"[{worker_name}] Неперехваченная ошибка в цикле worker: {e}")
             stop_event.wait(60)
@@ -814,244 +828,69 @@ def select_chat():
 @app.route('/generate/<sint:chat_id>', methods=['POST'])
 def generate_reply(chat_id):
     """
-    Обрабатывает ручную генерацию ответа.
-    ИСПРАВЛЕННАЯ ВЕРСИЯ: использует персональные настройки чата для определения
-    количества загружаемых сообщений (лимита истории).
+    Обрабатывает ручную генерацию ответа и возвращает результат в формате JSON.
     """
-    logging.info(f"Запрос POST /generate/{chat_id}")
+    logging.info(f"Запрос POST /generate/{chat_id} (AJAX)")
     if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии или ID чата. Пожалуйста, выберите чат заново.", "error")
-        return redirect(url_for('index'))
+        return jsonify({'status': 'error', 'message': 'Ошибка сессии или ID чата.'}), 400
 
-    chat_settings = get_chat_settings(chat_id)
-    generation_mode = chat_settings.get('generation_mode', 'prompt')
+    settings_for_generation = get_chat_settings(chat_id)
+    character_id = settings_for_generation.get('active_character_id')
 
-    # Получаем информацию о чате для префикса
-    chat_info_data = session.get('chat_info')
-    if not chat_info_data:
-        chat_info_data, _ = run_in_telegram_loop(get_chat_info(chat_id))
-        if chat_info_data: session['chat_info'] = chat_info_data
+    if not character_id:
+        return jsonify({'status': 'error', 'message': 'Активный персонаж не выбран!'}), 400
+    
+    chat_info_data, _ = run_in_telegram_loop(get_chat_info(chat_id))
 
-    final_system_prompt = ""
-    settings_for_generation = chat_settings # По умолчанию используем настройки чата
+    final_system_prompt = character_utils.get_full_prompt_for_character(
+        character_id, 
+        chat_name=chat_info_data.get('name') if chat_info_data else str(chat_id),
+        is_group=(chat_id < 0),
+        chat_context_prompt=settings_for_generation.get('chat_context_prompt')
+    )
+    
+    limit = settings_for_generation.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
+    history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=limit, settings=settings_for_generation))
 
-    if generation_mode == 'character':
-        character_id = chat_settings.get('active_character_id')
-        if not character_id:
-            flash("Режим 'Персонаж' активен, но персонаж не выбран!", "error")
-            return redirect(url_for('chat_page', chat_id=chat_id))
-        
-        character_data = character_utils.get_character(character_id)
-        if not character_data:
-            flash(f"Не удалось загрузить данные для персонажа ID {character_id}", "error")
-            return redirect(url_for('chat_page', chat_id=chat_id))
+    if history_error or not history_data:
+        error = history_error or "История чата пуста."
+        return jsonify({'status': 'error', 'message': f'Ошибка получения истории: {error}'}), 500
 
-        # Собираем полный промпт из частей персонажа
-        final_system_prompt = character_utils.get_full_prompt_for_character(character_id, generate_sticker_prompt())
-        
-        # Если у персонажа есть свои продвинутые настройки, используем их
-        if character_data.get('advanced_settings'):
-            # Важно! Мы объединяем их с дефолтными, чтобы не потерять ключи
-            char_adv_settings = DEFAULT_CHAT_SETTINGS.copy()
-            char_adv_settings.update(character_data['advanced_settings'])
-            settings_for_generation = char_adv_settings
-
-    else: # Режим 'prompt'
-        # Логика как раньше, но теперь она в блоке else
-        all_prompts = load_prompts()
-        base_prompt = all_prompts.get(chat_id, "")
-        sticker_prompt = generate_sticker_prompt()
-        if not base_prompt: # Если для чата нет кастомного промпта, создаем дефолтный
-             final_system_prompt = f"{character_utils.DEFAULT_SYSTEM_COMMANDS_PROMPT}\n\n{sticker_prompt}".strip()
-        else:
-             final_system_prompt = f"{base_prompt}\n\n{sticker_prompt}".strip()
-
-    if settings_for_generation.get('add_chat_name_prefix', True): # По умолчанию включено
-        if chat_info_data:
-            chat_name = chat_info_data.get('name', str(chat_id))
-            is_group = chat_id < 0
-            prefix = f"Это чат в группе '{chat_name}'.\n\n" if is_group else f"Это чат с '{chat_name}'.\n\n"
-            final_system_prompt = prefix + final_system_prompt
-            logging.info(f"Добавлен префикс в системный промпт: '{prefix.strip()}'")
-
-    limit_from_settings = settings_for_generation.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
-
-    limit_str = request.form.get('history_limit', str(limit_from_settings))
-    try:
-        current_limit = int(limit_str)
-        if not (0 < current_limit <= CHAT_LIMIT):
-            logging.warning(f"Недопустимый лимит {current_limit} из формы, используется {limit_from_settings}")
-            current_limit = limit_from_settings
-    except ValueError:
-        logging.warning(f"Некорректный лимит '{limit_str}' из формы, используется {limit_from_settings}")
-        current_limit = limit_from_settings
-
-    with auto_mode_lock:
-        worker_info = auto_mode_workers.get(chat_id)
-        auto_mode_status = worker_info["status"] if worker_info and worker_info["thread"] and worker_info["thread"].is_alive() else "inactive"
-    if not gemini_client_global:
-        flash("Клиент Gemini не инициализирован. Генерация невозможна.", "error")
-        chat_info_data = session.get('chat_info')
-        info_error = None
-        if not chat_info_data:
-            chat_info_data, info_error = run_in_telegram_loop(get_chat_info(chat_id))
-            if info_error: logging.warning(f"Ошибка получения инфо о чате {chat_id} при ошибке Gemini: {info_error}")
-            elif chat_info_data: session['chat_info'] = chat_info_data
-        history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_for_generation))
-        if history_error: logging.error(f"Ошибка истории при ошибке Gemini: {history_error}")
-        return render_template(
-            'chat.html',
-            chat_id=chat_id,
-            chat_info=chat_info_data,
-            history=history_data if history_data else [],
-            history_error=history_error,
-            generated_reply=None,
-            generation_error="Клиент Gemini не инициализирован.",
-            default_system_prompt=request.form.get('system_prompt', DEFAULT_SYSTEM_PROMPT),
-            default_model_name=request.form.get('model_name', BASE_GEMENI_MODEL),
-            current_limit=current_limit,
-            auto_mode_status=auto_mode_status
-        )
-    system_prompt_from_form = request.form.get('system_prompt', DEFAULT_SYSTEM_PROMPT)
     model_name_input = request.form.get('model_name', '').strip()
-
     model_from_settings = settings_for_generation.get('model_name', '')
     model_name_to_use = model_from_settings or model_name_input or BASE_GEMENI_MODEL
-
-    logging.info(f"Получение истории для генерации (чат {chat_id}, лимит: {current_limit})")
-    history_data, history_error_for_render = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_for_generation))
-    chat_info_data = session.get('chat_info')
-    if not chat_info_data:
-        chat_info_data, _ = run_in_telegram_loop(get_chat_info(chat_id))
-        if chat_info_data: session['chat_info'] = chat_info_data
-    if history_error_for_render:
-        flash(f"Ошибка получения истории для генерации: {history_error_for_render}", "error")
-        logging.error(f"Ошибка истории перед генерацией: {history_error_for_render}")
-        return render_template(
-            'chat.html',
-            chat_id=chat_id,
-            chat_info=chat_info_data,
-            history=history_data if history_data else [],
-            history_error=history_error_for_render,
-            generated_reply=None,
-            generation_error=f"Ошибка получения истории: {history_error_for_render}",
-            loaded_system_prompt=system_prompt_from_form,
-            default_model_name=model_name_to_use,
-            current_limit=current_limit,
-            auto_mode_status=auto_mode_status,
-            generation_mode=generation_mode,
-            all_characters=character_utils.load_characters(),
-            active_character_id=chat_settings.get('active_character_id'),
-            active_character_data=character_utils.get_character(chat_settings.get('active_character_id')) if generation_mode == 'character' else None,
-            chat_settings=chat_settings
-        )
-    if not history_data:
-        flash("История чата пуста, генерация невозможна.", "warning")
-        logging.warning(f"Попытка генерации для чата {chat_id} с пустой историей.")
-        return render_template(
-            'chat.html',
-            chat_id=chat_id,
-            chat_info=chat_info_data,
-            history=[],
-            history_error=None,
-            generated_reply=None,
-            generation_error="История чата пуста.",
-            loaded_system_prompt=system_prompt_from_form,
-            default_model_name=model_name_to_use,
-            current_limit=current_limit,
-            auto_mode_status=auto_mode_status,
-            generation_mode=generation_mode,
-            all_characters=character_utils.load_characters(),
-            active_character_id=chat_settings.get('active_character_id'),
-            active_character_data=character_utils.get_character(chat_settings.get('active_character_id')) if generation_mode == 'character' else None,
-            chat_settings=chat_settings
-        )
+    
     logging.info(f"Вызов Gemini для генерации (чат {chat_id}, модель: {model_name_to_use})")
+    
     tools = []
     if settings_for_generation.get('enable_google_search', False):
-        tools.append(#types.Tool(url_context=types.UrlContext()),
-                     types.Tool(googleSearch=types.GoogleSearch()))
+        tools.append(types.Tool(googleSearch=types.GoogleSearch()))
 
     thinking_config = None
     thinking_models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
-    model_name_lower = model_name_to_use.lower()
-    is_thinking_model = any(m in model_name_lower for m in thinking_models)
-
-    if settings_for_generation.get('enable_thinking', False) and is_thinking_model:
+    if settings_for_generation.get('enable_thinking', False) and any(m in model_name_to_use.lower() for m in thinking_models):
         thinking_config = types.ThinkingConfig(thinking_budget=-1)
-    elif settings_for_generation.get('enable_thinking', False):
-        logging.warning(f"Thinking mode включен, но модель '{model_name_to_use}' его не поддерживает. Игнорируется.")
 
     final_generation_config_parts = {}
-    if tools:
-        final_generation_config_parts['tools'] = tools
-    if thinking_config:
-        final_generation_config_parts['thinking_config'] = thinking_config
-    
+    if tools: final_generation_config_parts['tools'] = tools
+    if thinking_config: final_generation_config_parts['thinking_config'] = thinking_config
     final_generation_config = types.GenerateContentConfig(**final_generation_config_parts) if final_generation_config_parts else None
 
     generated_text, generation_error_message = generate_chat_reply_original(
         model_name=model_name_to_use,
         system_prompt=final_system_prompt,
         chat_history=history_data,
-        config=final_generation_config 
+        config=final_generation_config
     )
+
     if generation_error_message:
-        flash(f"Ошибка генерации ответа: {generation_error_message}", "error")
         logging.error(f"Ошибка Gemini: {generation_error_message}")
-        return render_template(
-            'chat.html',
-            chat_id=chat_id,
-            chat_info=chat_info_data,
-            history=history_data,
-            history_error=history_error_for_render,
-            generated_reply=None,
-            generation_error=generation_error_message,
-            loaded_system_prompt=system_prompt_from_form,
-            default_model_name=model_name_to_use,
-            current_limit=current_limit,
-            auto_mode_status=auto_mode_status,
-            generation_mode=generation_mode,
-            all_characters=character_utils.load_characters(),
-            active_character_id=chat_settings.get('active_character_id'),
-            active_character_data=character_utils.get_character(chat_settings.get('active_character_id')) if generation_mode == 'character' else None,
-            chat_settings=chat_settings
-        )
-    else:
-        flash("Ответ успешно сгенерирован!", "success")
-        logging.info(f"Gemini успешно сгенерировал ответ для чата {chat_id}")
-        logging.info(f"ОТЛАДКА: Тип generated_text: {type(generated_text)}")
-        logging.info(f"ОТЛАДКА: Значение generated_text перед strip: '{generated_text}'")
-        reply_to_render = None
-        if isinstance(generated_text, str):
-            stripped_text = generated_text.strip()
-            if stripped_text:
-                reply_to_render = stripped_text
-                logging.info(f"ОТЛАДКА: generated_text является непустой строкой. Будет передан в шаблон: '{reply_to_render}'")
-            else:
-                logging.warning(f"ОТЛАДКА: Сгенерированный текст '{generated_text}' пуст или состоит только из пробелов. В шаблон будет передан None.")
-                flash("Сгенерированный ответ оказался пустым.", "warning")
-        else:
-            logging.warning(f"ОТЛАДКА: Сгенерированный текст не является строкой (тип: {type(generated_text)}). В шаблон будет передан None.")
-            flash("Сгенерированный ответ имеет неверный формат.", "warning")
-        return render_template(
-            'chat.html',
-            chat_id=chat_id,
-            chat_info=chat_info_data,
-            history=history_data,
-            history_error=history_error_for_render,
-            generated_reply=reply_to_render,
-            generation_error=None,
-            loaded_system_prompt=system_prompt_from_form,
-            default_model_name=model_name_to_use,
-            current_limit=current_limit,
-            auto_mode_status=auto_mode_status,
-            generation_mode=generation_mode,
-            all_characters=character_utils.load_characters(),
-            active_character_id=chat_settings.get('active_character_id'),
-            active_character_data=character_utils.get_character(chat_settings.get('active_character_id')) if generation_mode == 'character' else None,
-            chat_settings=chat_settings
-        )
+        return jsonify({'status': 'error', 'message': f'Ошибка генерации: {generation_error_message}'}), 500
+    
+    reply_to_send = generated_text.strip() if isinstance(generated_text, str) and generated_text.strip() else ""
+    logging.info(f"Gemini успешно сгенерировал ответ для чата {chat_id}")
+    
+    return jsonify({'status': 'success', 'reply': reply_to_send})
 
 @app.route('/chat/<sint:chat_id>')
 def chat_page(chat_id):
@@ -1061,45 +900,39 @@ def chat_page(chat_id):
          session['current_chat_id'] = chat_id
          session.pop('chat_info', None) 
 
-    chat_settings = get_chat_settings(chat_id)
-    generation_mode = chat_settings.get('generation_mode', 'prompt')
-    active_character_id = chat_settings.get('active_character_id')
+    settings_to_use = get_chat_settings(chat_id)
+    active_character_id = settings_to_use.get('active_character_id')
     
-    settings_to_use = chat_settings
     active_character_data = None
+    sticker_prompt_text = "" 
     
-    if generation_mode == 'character' and active_character_id:
+    if active_character_id:
         active_character_data = character_utils.get_character(active_character_id)
-        if active_character_data and active_character_data.get('advanced_settings'):
-            # Объединяем дефолтные настройки с персональными настройками персонажа
-            char_adv_settings = DEFAULT_CHAT_SETTINGS.copy()
-            char_adv_settings.update(active_character_data['advanced_settings'])
-            settings_to_use = char_adv_settings
+        if active_character_data:
+            enabled_packs = active_character_data.get('enabled_sticker_packs', [])
+            sticker_prompt_text = generate_sticker_prompt(enabled_packs)
 
     current_limit_from_settings = settings_to_use.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
-    
     limit_str = request.args.get('limit', str(current_limit_from_settings))
     try:
         current_limit = int(limit_str)
         if not (0 < current_limit <= CHAT_LIMIT):
-            logging.warning(f"Недопустимый лимит {current_limit} из URL, используется {current_limit}")
+            logging.warning(f"Недопустимый лимит {current_limit} из URL, используется {current_limit_from_settings}")
             current_limit = current_limit_from_settings
     except ValueError:
-        logging.warning(f"Некорректный лимит '{limit_str}' из URL, используется {current_limit}")
+        logging.warning(f"Некорректный лимит '{limit_str}' из URL, используется {current_limit_from_settings}")
         current_limit = current_limit_from_settings
 
     chat_info_data = session.get('chat_info')
     info_error = None
     if not chat_info_data:
-        logging.info(f"Запрос истории для чата {chat_id} с лимитом {current_limit}")
+        logging.info(f"Запрос информации для чата {chat_id}")
         chat_info_data, info_error = run_in_telegram_loop(get_chat_info(chat_id))
         if info_error:
             flash(f"Не удалось получить информацию о чате: {info_error}", "warning")
             logging.warning(f"Ошибка получения инфо о чате {chat_id}: {info_error}")
         elif chat_info_data:
              session['chat_info'] = chat_info_data
-    else:
-        logging.debug(f"Используем кешированную информацию для чата {chat_id}")
 
     with auto_mode_lock:
         worker_info = auto_mode_workers.get(chat_id)
@@ -1109,32 +942,14 @@ def chat_page(chat_id):
              auto_mode_status = "inactive"
              if chat_id in auto_mode_workers:
                  del auto_mode_workers[chat_id]
-
     session[f'auto_mode_status_{chat_id}'] = auto_mode_status
 
-    logging.info(f"Запрос истории для чата {chat_id}")
+    logging.info(f"Запрос истории для чата {chat_id} с лимитом {current_limit}")
     history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_to_use))
     if history_error:
         logging.error(f"Ошибка получения истории для чата {chat_id}: {history_error}")
 
-    all_prompts = load_prompts()
-    sticker_prompt_text = generate_sticker_prompt()
-    loaded_system_prompt = all_prompts.get(chat_id, character_utils.DEFAULT_SYSTEM_COMMANDS_PROMPT)
-
-    # Загружаем всех персонажей для селектора
     all_characters = character_utils.load_characters()
-    sticker_prompt_text = generate_sticker_prompt()
-
-    if chat_id in all_prompts:
-        loaded_system_prompt = all_prompts[chat_id]
-        logging.info(f"Загружен сохраненный системный промпт для чата {chat_id}.")
-    else:
-        if sticker_prompt_text:
-            loaded_system_prompt = f"{DEFAULT_SYSTEM_PROMPT}\n\n{sticker_prompt_text}".strip()
-        else:
-            loaded_system_prompt = DEFAULT_SYSTEM_PROMPT
-        logging.info(f"Используется дефолтный промпт + промпт для стикеров для чата {chat_id}.")
-
     sticker_db = load_sticker_data()
     sticker_packs_for_template = sorted(
         [{"codename": name, **data} for name, data in sticker_db.items()],
@@ -1147,16 +962,14 @@ def chat_page(chat_id):
         chat_info=chat_info_data,
         history=history_data if history_data else [],
         history_error=history_error,
-        generated_reply=None, 
-        generation_error=None,
-        loaded_system_prompt=loaded_system_prompt, 
+        generated_reply=None,  
+        generation_error=None, 
         sticker_prompt_text_for_js=sticker_prompt_text,
         sticker_packs=sticker_packs_for_template,
         default_model_name=BASE_GEMENI_MODEL,
         current_limit=current_limit,
         auto_mode_status=auto_mode_status,
-        chat_settings=settings_to_use, 
-        generation_mode=generation_mode,
+        chat_settings=settings_to_use,
         all_characters=all_characters,
         active_character_id=active_character_id,
         active_character_data=active_character_data
@@ -1165,7 +978,7 @@ def chat_page(chat_id):
 @app.route('/update_sticker_status/<sint:chat_id>', methods=['POST'])
 def update_sticker_status(chat_id):
     """
-    Обновляет статусы стикеров для чата ИЛИ для активного персонажа.
+    Обновляет статусы стикеров для активного персонажа в этом чате.
     """
     logging.info(f"Запрос POST /update_sticker_status/{chat_id}")
     if session.get('current_chat_id') != chat_id:
@@ -1175,45 +988,21 @@ def update_sticker_status(chat_id):
     enabled_codenames = request.form.getlist('sticker_enabled')
     
     chat_settings = get_chat_settings(chat_id)
-    generation_mode = chat_settings.get('generation_mode', 'prompt')
+    character_id = chat_settings.get('active_character_id')
 
-    if generation_mode == 'character':
-        character_id = chat_settings.get('active_character_id')
-        if not character_id:
-            flash("Не выбран персонаж для обновления стикеров.", "error")
-            return redirect(url_for('chat_page', chat_id=chat_id))
+    if not character_id:
+        flash("Не выбран персонаж для обновления стикеров.", "error")
+        return redirect(url_for('chat_page', chat_id=chat_id))
 
-        all_characters = character_utils.load_characters()
-        if character_id in all_characters:
-            all_characters[character_id]['enabled_sticker_packs'] = enabled_codenames
-            if character_utils.save_characters(all_characters):
-                flash("Настройки стикеров для персонажа сохранены.", "success")
-            else:
-                flash("Ошибка сохранения настроек стикеров персонажа.", "error")
+    all_characters = character_utils.load_characters()
+    if character_id in all_characters:
+        all_characters[character_id]['enabled_sticker_packs'] = enabled_codenames
+        if character_utils.save_characters(all_characters):
+            flash("Настройки стикеров для персонажа сохранены.", "success")
         else:
-            flash("Персонаж не найден.", "error")
-
-    else: # Режим 'prompt'
-        # Старая логика: обновляем глобальную базу стикеров
-        sticker_data = load_sticker_data()
-        updated = False
-        for codename, data in sticker_data.items():
-            was_enabled = data.get('enabled', False)
-            is_now_enabled = codename in enabled_codenames
-            
-            if was_enabled != is_now_enabled:
-                sticker_data[codename]['enabled'] = is_now_enabled
-                updated = True
-        
-        if updated:
-            if save_sticker_data(sticker_data):
-                flash("Глобальные статусы наборов стикеров успешно обновлены.", "success")
-                from telegram_utils import load_sticker_db
-                load_sticker_db() # Перезагружаем в память
-            else:
-                flash("Ошибка при сохранении статусов стикеров.", "error")
-        else:
-            flash("Изменений в статусах стикеров не было.", "info")
+            flash("Ошибка сохранения настроек стикеров персонажа.", "error")
+    else:
+        flash("Персонаж не найден.", "error")
 
     return redirect(url_for('chat_page', chat_id=chat_id))
 
@@ -1275,144 +1064,123 @@ def stop_auto_mode(chat_id):
 
     return redirect(url_for('chat_page', chat_id=chat_id))
 
-@app.route('/save_prompt/<sint:chat_id>', methods=['POST'])
-def save_prompt(chat_id):
-    logging.info(f"Запрос POST /save_prompt/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии или ID чата при сохранении промпта.", "error")
-        return redirect(url_for('index'))
-
-    prompt_to_save = request.form.get('prompt_to_save')
-
-    if prompt_to_save is None: 
-         flash("Ошибка: не получен текст промпта для сохранения.", "error")
-         return redirect(url_for('chat_page', chat_id=chat_id))
-
-    logging.info(f"Сохранение системного промпта для чата {chat_id}")
-    all_prompts = load_prompts()
-    all_prompts[chat_id] = prompt_to_save 
-    save_prompts(all_prompts) 
-
-    flash(f"Системный промпт для чата {chat_id} успешно сохранен.", "success")
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
 @app.route('/save_chat_settings/<sint:chat_id>', methods=['POST'])
 def save_chat_settings_route(chat_id):
     """
-    Сохраняет продвинутые настройки для чата ИЛИ для активного персонажа в чате.
+    Сохраняет продвинутые настройки и контекст чата.
+    Может сохранять их только для текущего чата или еще и в дефолтные настройки персонажа.
     """
     logging.info(f"Запрос POST /save_chat_settings/{chat_id}")
     if session.get('current_chat_id') != chat_id:
         flash("Ошибка сессии при сохранении настроек.", "error")
         return redirect(url_for('index'))
 
-    chat_settings = get_chat_settings(chat_id)
-    generation_mode = chat_settings.get('generation_mode', 'prompt')
-    
-    settings_data = {}
-    try:
-        # Сначала собираем все данные из формы в словарь
-        settings_data['substitution_chance'] = float(request.form.get('substitution_chance'))
-        settings_data['transposition_chance'] = float(request.form.get('transposition_chance'))
-        settings_data['skip_chance'] = float(request.form.get('skip_chance'))
-        settings_data['model_name'] = request.form.get('model_name_advanced', '')
-        settings_data['enable_google_search'] = 'enable_google_search' in request.form
-        settings_data['enable_thinking'] = 'enable_thinking' in request.form
-        settings_data['can_see_photos'] = 'can_see_photos' in request.form
-        settings_data['can_see_videos'] = 'can_see_videos' in request.form
-        settings_data['can_see_audio'] = 'can_see_audio' in request.form
-        settings_data['can_see_files_pdf'] = 'can_see_files_pdf' in request.form
-        settings_data['add_chat_name_prefix'] = 'add_chat_name_prefix' in request.form
-        settings_data['num_messages_to_fetch'] = int(request.form.get('num_messages_to_fetch'))
-        settings_data['auto_mode_check_interval'] = float(request.form.get('auto_mode_check_interval'))
-        settings_data['auto_mode_initial_wait'] = float(request.form.get('auto_mode_initial_wait'))
-        settings_data['auto_mode_no_reply_timeout'] = float(request.form.get('auto_mode_no_reply_timeout'))
-        settings_data['auto_mode_no_reply_suffix'] = request.form.get('auto_mode_no_reply_suffix', '')
-        settings_data['sticker_choosing_delay_min'] = float(request.form.get('sticker_choosing_delay_min'))
-        settings_data['sticker_choosing_delay_max'] = float(request.form.get('sticker_choosing_delay_max'))
-        settings_data['typing_delay_ms_min'] = float(request.form.get('typing_delay_ms_min'))
-        settings_data['typing_delay_ms_max'] = float(request.form.get('typing_delay_ms_max'))
-        settings_data['base_thinking_delay_s_min'] = float(request.form.get('base_thinking_delay_s_min'))
-        settings_data['base_thinking_delay_s_max'] = float(request.form.get('base_thinking_delay_s_max'))
-        settings_data['max_typing_duration_s'] = float(request.form.get('max_typing_duration_s'))
-
-    except (ValueError, TypeError) as e:
-        logging.error(f"Ошибка приведения типов при сохранении настроек: {e}")
-        flash("Ошибка: введено неверное значение в одном из полей.", "error")
+    # Определяем, какая кнопка была нажата
+    save_action = request.form.get('save_action')
+    if not save_action:
+        flash("Действие для сохранения не определено.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    if generation_mode == 'character':
-        character_id = chat_settings.get('active_character_id')
-        if not character_id:
-            flash("Не выбран персонаж для сохранения настроек.", "error")
-            return redirect(url_for('chat_page', chat_id=chat_id))
-        
+    # Получаем ID активного персонажа из настроек чата
+    all_chat_settings = load_chat_settings()
+    character_id = all_chat_settings.get(chat_id, {}).get('active_character_id')
+
+    if not character_id:
+        flash("Активный персонаж не выбран. Настройки не сохранены.", "error")
+        return redirect(url_for('chat_page', chat_id=chat_id))
+
+    # --- Сбор данных из формы ---
+    try:
+        advanced_settings_data = {
+            'can_see_photos': 'can_see_photos' in request.form,
+            'can_see_videos': 'can_see_videos' in request.form,
+            'can_see_audio': 'can_see_audio' in request.form,
+            'can_see_files_pdf': 'can_see_files_pdf' in request.form,
+            'enable_auto_memory': 'enable_auto_memory' in request.form,
+            'auto_mode_check_interval': float(request.form.get('auto_mode_check_interval')),
+            'auto_mode_initial_wait': float(request.form.get('auto_mode_initial_wait')),
+            'auto_mode_no_reply_timeout': float(request.form.get('auto_mode_no_reply_timeout')),
+            'auto_mode_no_reply_suffix': request.form.get('auto_mode_no_reply_suffix', ''),
+            'model_name': request.form.get('model_name_advanced', ''),
+            'enable_google_search': 'enable_google_search' in request.form,
+            'enable_thinking': 'enable_thinking' in request.form,
+            'num_messages_to_fetch': int(request.form.get('num_messages_to_fetch')),
+            'sticker_choosing_delay_min': float(request.form.get('sticker_choosing_delay_min')),
+            'sticker_choosing_delay_max': float(request.form.get('sticker_choosing_delay_max')),
+            'base_thinking_delay_s_min': float(request.form.get('base_thinking_delay_s_min')),
+            'base_thinking_delay_s_max': float(request.form.get('base_thinking_delay_s_max')),
+            'typing_delay_ms_min': float(request.form.get('typing_delay_ms_min')),
+            'typing_delay_ms_max': float(request.form.get('typing_delay_ms_max')),
+            'max_typing_duration_s': float(request.form.get('max_typing_duration_s')),
+            'substitution_chance': float(request.form.get('substitution_chance')),
+            'transposition_chance': float(request.form.get('transposition_chance')),
+            'skip_chance': float(request.form.get('skip_chance')),
+        }
+        # Контекст чата (chat_context_prompt)
+        chat_context_prompt = request.form.get('chat_context_prompt', '')
+    except (ValueError, TypeError) as e:
+        flash(f"Ошибка в числовых данных: {e}", "error")
+        return redirect(url_for('chat_page', chat_id=chat_id))
+
+    # --- Логика сохранения ---
+    
+    # 1. Сохраняем в настройки чата (chat_settings.json)
+    if chat_id not in all_chat_settings: all_chat_settings[chat_id] = {}
+    if 'character_specifics' not in all_chat_settings[chat_id]: all_chat_settings[chat_id]['character_specifics'] = {}
+    if character_id not in all_chat_settings[chat_id]['character_specifics']: all_chat_settings[chat_id]['character_specifics'][character_id] = {}
+    
+    all_chat_settings[chat_id]['character_specifics'][character_id]['advanced_settings'] = advanced_settings_data
+    all_chat_settings[chat_id]['character_specifics'][character_id]['chat_context_prompt'] = chat_context_prompt
+    
+    save_chat_settings(all_chat_settings)
+    logging.info(f"Сохранены настройки для персонажа {character_id} в чате {chat_id}.")
+
+    # 2. Если нужно, сохраняем в дефолтные настройки персонажа (characters.json)
+    if save_action == 'save_for_chat_and_default':
         all_characters = character_utils.load_characters()
         if character_id in all_characters:
-            all_characters[character_id]['advanced_settings'] = settings_data
+            all_characters[character_id]['advanced_settings'] = advanced_settings_data
             if character_utils.save_characters(all_characters):
-                flash("Продвинутые настройки для персонажа успешно сохранены.", "success")
+                flash("Настройки сохранены для этого чата И как настройки по умолчанию для персонажа.", "success")
+                logging.info(f"Обновлены настройки по умолчанию для персонажа {character_id}.")
             else:
-                flash("Ошибка сохранения настроек персонажа.", "error")
+                flash("Настройки для чата сохранены, но не удалось обновить дефолт персонажа!", "error")
         else:
-            flash("Персонаж для сохранения настроек не найден.", "error")
-
-    else: # Режим 'prompt'
-        all_chat_settings = load_chat_settings()
-        # Сохраняем только продвинутые настройки, не трогая режим и ID персонажа
-        if chat_id not in all_chat_settings:
-            all_chat_settings[chat_id] = {}
-        all_chat_settings[chat_id].update(settings_data)
-        save_chat_settings(all_chat_settings)
-        flash("Продвинутые настройки для чата успешно сохранены.", "success")
+            flash("Персонаж для обновления дефолтных настроек не найден.", "error")
+    else:
+        flash("Настройки для этого чата успешно сохранены.", "success")
 
     return redirect(url_for('chat_page', chat_id=chat_id))
 
 
 @app.route('/reset_chat_settings/<sint:chat_id>', methods=['POST'])
 def reset_chat_settings_route(chat_id):
-    """Сбрасывает настройки чата до значений по умолчанию."""
+    """
+    Сбрасывает специфичные настройки персонажа для этого чата,
+    возвращая их к глобальным настройкам персонажа по умолчанию.
+    """
     logging.info(f"Запрос POST /reset_chat_settings/{chat_id}")
     if session.get('current_chat_id') != chat_id:
         flash("Ошибка сессии при сбросе настроек.", "error")
         return redirect(url_for('index'))
 
     all_settings = load_chat_settings()
-    if chat_id in all_settings:
-        del all_settings[chat_id]
+    character_id = all_settings.get(chat_id, {}).get('active_character_id')
+
+    if not character_id:
+        flash("Не выбран персонаж, настройки которого нужно сбросить.", "warning")
+        return redirect(url_for('chat_page', chat_id=chat_id))
+
+    if chat_id in all_settings and 'character_specifics' in all_settings[chat_id] and character_id in all_settings[chat_id]['character_specifics']:
+        del all_settings[chat_id]['character_specifics'][character_id]
+        if not all_settings[chat_id]['character_specifics']:
+            del all_settings[chat_id]['character_specifics']
+            
         save_chat_settings(all_settings)
-        flash("Настройки для этого чата сброшены к значениям по умолчанию.", "success")
+        flash("Локальные настройки для персонажа в этом чате сброшены к его значениям по умолчанию.", "success")
     else:
-        flash("Для этого чата и так используются настройки по умолчанию.", "info")
+        flash("Для этого персонажа в этом чате и так используются его настройки по умолчанию.", "info")
 
-    return redirect(url_for('chat_page', chat_id=chat_id))
-
-@app.route('/chat/<sint:chat_id>/set_generation_mode', methods=['POST'])
-def set_generation_mode(chat_id):
-    """Переключает режим генерации для чата."""
-    logging.info(f"Запрос POST /chat/{chat_id}/set_generation_mode")
-    if session.get('current_chat_id') != chat_id:
-        return jsonify({"success": False, "error": "Session error"}), 403
-
-    mode = request.form.get('mode')
-    if mode not in ['prompt', 'character']:
-        return jsonify({"success": False, "error": "Invalid mode"}), 400
-
-    all_settings = load_chat_settings()
-    if chat_id not in all_settings:
-        all_settings[chat_id] = {}
-    
-    all_settings[chat_id]['generation_mode'] = mode
-    
-    # Если переключаемся на персонажа, но ни один не выбран, выберем первого в списке
-    if mode == 'character' and not all_settings[chat_id].get('active_character_id'):
-        characters = character_utils.load_characters()
-        if characters:
-            first_char_id = next(iter(characters))
-            all_settings[chat_id]['active_character_id'] = first_char_id
-
-    save_chat_settings(all_settings)
-    flash(f"Режим для чата переключен на '{mode}'.", "success")
     return redirect(url_for('chat_page', chat_id=chat_id))
 
 @app.route('/chat/<sint:chat_id>/set_active_character', methods=['POST'])
@@ -1426,7 +1194,6 @@ def set_active_character(chat_id):
         all_settings[chat_id] = {}
 
     all_settings[chat_id]['active_character_id'] = character_id
-    all_settings[chat_id]['generation_mode'] = 'character' # Принудительно ставим режим
     save_chat_settings(all_settings)
 
     character_name = character_utils.get_character(character_id).get('name', 'Неизвестный')
@@ -1452,52 +1219,58 @@ def create_character():
 
 @app.route('/character/save/<character_id>', methods=['POST'])
 def save_character(character_id):
-    """Сохраняет все данные персонажа из формы."""
+    """
+    Сохраняет все данные персонажа из формы, А ТАКЖЕ специфичный для чата контекст.
+    """
     logging.info(f"Запрос POST /character/save/{character_id}")
-    
+    chat_id = session.get('current_chat_id')
+    if not chat_id:
+        flash("Ошибка сессии: чат не определен.", "error")
+        return redirect(url_for('index'))
+
     characters = character_utils.load_characters()
     if character_id not in characters:
         flash("Персонаж для сохранения не найден.", "error")
-        return redirect(url_for('chat_page', chat_id=session.get('current_chat_id')))
+        return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # Собираем данные из формы
     characters[character_id]['name'] = request.form.get('character_name')
     characters[character_id]['personality_prompt'] = request.form.get('personality_prompt')
     characters[character_id]['memory_prompt'] = request.form.get('memory_prompt')
     characters[character_id]['system_commands_prompt'] = request.form.get('system_commands_prompt')
     characters[character_id]['memory_update_prompt'] = request.form.get('memory_update_prompt')
 
-    if character_utils.save_characters(characters):
-        flash(f"Данные персонажа '{characters[character_id]['name']}' успешно сохранены.", "success")
-    else:
-        flash("Ошибка при сохранении данных персонажа.", "error")
+    save_character_success = character_utils.save_characters(characters)
 
-    return redirect(url_for('chat_page', chat_id=session.get('current_chat_id')))
+    chat_context_prompt = request.form.get('chat_context_prompt', '')
+    all_chat_settings = load_chat_settings()
+    
+    if chat_id not in all_chat_settings: all_chat_settings[chat_id] = {}
+    if 'character_specifics' not in all_chat_settings[chat_id]: all_chat_settings[chat_id]['character_specifics'] = {}
+    if character_id not in all_chat_settings[chat_id]['character_specifics']: all_chat_settings[chat_id]['character_specifics'][character_id] = {}
+
+    all_chat_settings[chat_id]['character_specifics'][character_id]['chat_context_prompt'] = chat_context_prompt
+    save_chat_settings(all_chat_settings)
+    logging.info(f"Контекст для персонажа {character_id} в чате {chat_id} обновлен.")
+
+    if save_character_success:
+        flash(f"Данные персонажа '{characters[character_id]['name']}' и контекст чата успешно сохранены.", "success")
+    else:
+        flash("Контекст чата сохранен, но произошла ошибка при сохранении основных данных персонажа.", "error")
+
+    return redirect(url_for('chat_page', chat_id=chat_id))
 
 @app.route('/chat/<sint:chat_id>/update_memory', methods=['POST'])
 def update_memory_route(chat_id):
     """Маршрут для запуска обновления памяти персонажа."""
     logging.info(f"Запрос POST /chat/{chat_id}/update_memory")
     
-    chat_settings = get_chat_settings(chat_id)
-    character_id = chat_settings.get('active_character_id')
+    settings_to_use = get_chat_settings(chat_id)
+    character_id = settings_to_use.get('active_character_id')
     
     if not character_id:
         flash("Не выбран персонаж для обновления памяти.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    active_character_data = character_utils.get_character(character_id)
-    if not active_character_data:
-        flash(f"Не найдены данные для персонажа ID {character_id}.", "error")
-        return redirect(url_for('chat_page', chat_id=chat_id))
-
-    settings_to_use = chat_settings 
-    if active_character_data.get('advanced_settings'):
-
-        char_adv_settings = DEFAULT_CHAT_SETTINGS.copy()
-        char_adv_settings.update(active_character_data['advanced_settings'])
-        settings_to_use = char_adv_settings
-    
     limit_for_memory = settings_to_use.get('num_messages_to_fetch', DEFAULT_CHAT_SETTINGS['num_messages_to_fetch'])
     logging.info(f"Для анализа памяти будет использовано {limit_for_memory} сообщений (из настроек).")
 

@@ -1,4 +1,4 @@
-
+<!-- --- ИЗМЕНЕН ФАЙЛ --- -->
 {% extends "base.html" %}
 
 {% block title %}Чат с {{ chat_info.name if chat_info else '...' }}{% endblock %}
@@ -10,10 +10,9 @@
     <p class="chat-id-display"><small>ID чата: {{ chat_id }}</small></p>
 
     {% if history_error %}
-         
+        <div class="alert alert-error">{{ history_error }}</div>
     {% endif %}
 
-    
     <div class="update-history-form">
         <form method="get" action="{{ url_for('chat_page', chat_id=chat_id) }}">
              <label for="num_messages_to_load">Загрузить сообщений:</label>
@@ -27,18 +26,15 @@
         {% if history %}
             {% for msg in history %}
                 <div class="message {{ msg.role }}">
-                    
                     {% for part in msg.parts %}
                         {% if part.text %}
                             <pre>{{ part.text }}</pre>
                         {% endif %}
-
                         
                         {% if part.image_base64 %}
                             <img src="data:{{ part.mime_type }};base64,{{ part.image_base64 }}"
                                 alt="Изображение из чата"
                                 style="max-width: 100%; border-radius: 12px; margin-top: 8px;">
-                        
                         
                         {% elif part.video_base64 and part.mime_type == 'video/mp4' %}
                             <video controls loop autoplay muted
@@ -48,11 +44,11 @@
                             </video>
                         
                         {% elif part.audio_base64 and part.mime_type in ['audio/mpeg', 'audio/ogg'] %}
-                        
                              <audio controls>
                                  <source src="data:{{ part.mime_type }};base64,{{ part.audio_base64 }}" type="{{ part.mime_type }}">
                                  Ваш браузер не поддерживает аудио-элемент.
                              </audio>
+
                         {% elif part.file_base64 and part.mime_type == 'application/pdf' %}
                              <a href="data:{{ part.mime_type }};base64,{{ part.file_base64 }}" target="_blank" class="pdf-attachment">
                                  <span class="pdf-icon">📄</span>
@@ -62,10 +58,7 @@
                                  </div>
                              </a>
                         {% endif %}
-                        
-
                     {% endfor %}
-                    
                 </div>
             {% endfor %}
         {% else %}
@@ -79,47 +72,14 @@
 
 <div class="content-card">
     <div class="generation-header">
-        <h2>Генерация ответа</h2>
-        <form action="{{ url_for('set_generation_mode', chat_id=chat_id) }}" method="POST" class="mode-switcher-form">
-            <button type="submit" name="mode" value="prompt" class="switch-button {{ 'active' if generation_mode == 'prompt' }}">
-                Режим Промпта
-            </button>
-            <button type="submit" name="mode" value="character" class="switch-button {{ 'active' if generation_mode == 'character' }}">
-                Режим Персонажа
-            </button>
-        </form>
+        <h2>Управление персонажем</h2>
     </div>
 
     {% if generation_error %}
         <div class="alert alert-error">{{ generation_error }}</div>
     {% endif %}
 
-    <!-- ======================= РЕЖИМ "ПРОМПТ" ======================= -->
-    <div id="prompt-mode-view" style="display: {{ 'block' if generation_mode == 'prompt' else 'none' }};">
-        <p class="settings-description">В этом режиме для каждого чата используется свой отдельный системный промпт. Просто и быстро.</p>
-        <form action="{{ url_for('generate_reply', chat_id=chat_id) }}" method="post" id="generate-form-prompt">
-            <input type="hidden" name="history_limit" value="{{ current_limit }}">
-            <div class="form-group">
-                <label for="system_prompt">📝 Системный промпт (инструкция для ИИ):</label>
-                <textarea name="system_prompt" id="system_prompt" rows="6">{{ loaded_system_prompt }}</textarea>
-                <small>Нажмите "Сохранить промпт", чтобы запомнить его для этого чата.</small>
-            </div>
-            <div class="form-group">
-                <label for="model_name_prompt">🤖 Модель Gemini:</label>
-                <input type="text" name="model_name" id="model_name_prompt" value="{{ default_model_name }}" required>
-            </div>
-            <div class="form-actions">
-                 <button type="submit" class="generate-button">Сгенерировать ответ</button>
-                 <form action="{{ url_for('save_prompt', chat_id=chat_id) }}" method="post" class="inline-form">
-                     <input type="hidden" name="prompt_to_save" id="prompt_to_save_hidden">
-                     <button type="button" class="button-secondary" onclick="document.getElementById('prompt_to_save_hidden').value = document.getElementById('system_prompt').value; this.form.submit();">Сохранить промпт</button>
-                </form>
-            </div>
-        </form> 
-    </div>
-
-    <!-- ======================= РЕЖИМ "ПЕРСОНАЖ" ======================= -->
-    <div id="character-mode-view" style="display: {{ 'block' if generation_mode == 'character' else 'none' }};">
+    <div>
         <div class="character-management-section">
             <h4>1. Выбор и создание персонажа</h4>
             <div class="character-management">
@@ -149,6 +109,10 @@
             <form action="{{ url_for('save_character', character_id=active_character_id) }}" method="POST" id="character-data-form">
                 <div class="form-group"><label>Имя персонажа:</label><input type="text" name="character_name" value="{{ active_character_data.name }}"></div>
                 <div class="form-group"><label>👤 Личность персонажа:</label><textarea name="personality_prompt" class="prompt-field personality-field" rows="5">{{ active_character_data.personality_prompt }}</textarea></div>
+                <div class="form-group">
+                    <label>💬 Контекст этого чата (для AI):</label>
+                    <textarea name="chat_context_prompt" class="prompt-field context-field" rows="4">{{ chat_settings.get('chat_context_prompt', '') }}</textarea>
+                </div>
                 <div class="form-group"><label>🧠 Память персонажа (можно редактировать):</label><textarea name="memory_prompt" class="prompt-field memory-field" rows="6">{{ active_character_data.memory_prompt }}</textarea></div>
                 <div class="form-group"><label>🛠️ Системные команды:</label><textarea name="system_commands_prompt" class="prompt-field system-field" rows="4">{{ active_character_data.system_commands_prompt }}</textarea></div>
                 <div class="form-group"><label>⚙️ Промпт для обновления памяти:</label><textarea name="memory_update_prompt" class="prompt-field memory-update-field" rows="5">{{ active_character_data.memory_update_prompt }}</textarea></div>
@@ -159,14 +123,15 @@
         <div class="character-actions-section">
             <h4>3. Действия в чате</h4>
             <div class="character-actions">
+                
                 <form action="{{ url_for('generate_reply', chat_id=chat_id) }}" method="post" id="generate-form-character">
                     <input type="hidden" name="history_limit" value="{{ current_limit }}">
                     <div class="form-group">
                         <label for="model_name_char">🤖 Модель Gemini для ответа:</label>
                         <input type="text" name="model_name" id="model_name_char" value="{{ active_character_data.advanced_settings.get('model_name') or default_model_name }}" required>
-                        
                     </div>
-                    <button type="submit" class="generate-button">Сгенерировать ответ</button>
+                    
+                    <button type="submit" class="generate-button">Сгенерировать ответ <span class="loading-spinner"></span></button>
                 </form>
                 <form action="{{ url_for('update_memory_route', chat_id=chat_id) }}" method="POST">
                      <button type="submit" class="button-secondary" onclick="return confirm('Это действие проанализирует последние сообщения и добавит их суть в память персонажа. Продолжить?');">✍️ Добавить в память</button>
@@ -175,23 +140,16 @@
         </div>
         
         {% else %}
-            <p class="centered-message">Пожалуйста, выберите или создайте персонажа, чтобы продолжить.</p>
+            <p class="settings-description" style="text-align: center; margin-top: 20px;">Пожалуйста, выберите или создайте персонажа, чтобы продолжить.</p>
         {% endif %}
     </div>
 </div>
 
-<!-- =================================================================== -->
-<!-- ==== БЛОКИ СТИКЕРОВ И НАСТРОЕК  =================================== -->
-<!-- =================================================================== -->
 <div class="content-card">
     <div class="sticker-controls">
         <h3>Управление стикерами</h3>
         <p class="settings-description">
-            {% if generation_mode == 'character' %}
             Эти настройки будут применены <strong>для активного персонажа</strong>.
-            {% else %}
-            Эти настройки будут применены <strong>глобально</strong> (для режима "Промпт").
-            {% endif %}
         </p>
         <form action="{{ url_for('update_sticker_status', chat_id=chat_id) }}" method="post">
             <details class="sticker-dropdown">
@@ -200,8 +158,8 @@
                     {% if sticker_packs %}
                         {% for pack in sticker_packs %}
                         <label class="sticker-item">
-                            {% set is_checked = (pack.codename in active_character_data.enabled_sticker_packs) if generation_mode == 'character' else pack.enabled %}
-                            <input type="checkbox" name="sticker_enabled" value="{{ pack.codename }}" {{ 'checked' if is_checked }}>
+                            <input type="checkbox" name="sticker_enabled" value="{{ pack.codename }}" 
+                                   {{ 'checked' if active_character_data and pack.codename in active_character_data.enabled_sticker_packs }}>
                             <span>{{ pack.codename }}</span>
                         </label>
                         {% endfor %}
@@ -220,14 +178,11 @@
 
 <div class="content-card">
     <details class="advanced-settings-details">
-        <summary><span class="summary-title"><span class="summary-icon">⚙️</span> Продвинутые настройки чата</span></summary>
+        <summary><span class="summary-title"><span class="summary-icon">⚙️</span> Продвинутые настройки персонажа в этом чате</span></summary>
         <div class="settings-content-wrapper">
              <p class="settings-description">
-                {% if generation_mode == 'character' %}
-                Эти настройки будут применены <strong>для активного персонажа</strong>.
-                {% else %}
-                Эти настройки будут применены <strong>для этого чата</strong> в режиме "Промпт".
-                {% endif %}
+                Эти настройки применяются для персонажа <strong>"{{ active_character_data.name if active_character_data else '...'}}"</strong> только в этом чате.
+                <br>Они переопределяют его настройки по умолчанию.
             </p>
             <form action="{{ url_for('save_chat_settings_route', chat_id=chat_id) }}" method="post" id="advanced-settings-form">
                 <h4>Настройки обработки медиа</h4>
@@ -263,6 +218,14 @@
                         </label>
                     </div>
                 </div>
+                <h4>Настройки памяти</h4>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enable_auto_memory" value="true" {% if chat_settings.get('enable_auto_memory', True) %}checked{% endif %}>
+                        Включить автоматическое обновление памяти
+                    </label>
+                    <small>Если включено, память персонажа будет автоматически пополняться в авто-режиме.</small>
+                </div>
                 <h4>Настройки Авто-режима</h4>
                 <div class="form-row">
                     <div class="form-group">
@@ -289,9 +252,9 @@
 
                 <h4>Настройки генерации Gemini</h4>
                 <div class="form-group">
-                    <label for="model_name_advanced">Модель для персонажа/чата</label>
+                    <label for="model_name_advanced">Модель для персонажа</label>
                     <input type="text" name="model_name_advanced" id="model_name_advanced" value="{{ chat_settings.get('model_name', '') }}">
-                    <small>Если указана, будет использоваться эта модель. В режиме "Персонаж" сохраняется для него. Оставьте пустым, чтобы использовать модель из основного поля ввода.</small>
+                    <small>Если указана, будет использоваться эта модель. Сохраняется для персонажа. Оставьте пустым, чтобы использовать модель из основного поля ввода.</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -371,12 +334,12 @@
                     <small>Шанс случайного удаления буквы или цифры. Дефолт: 0.002</small>
                 </div>
                 
-                <!-- Создаем контейнер для кнопок, чтобы выровнять их справа -->
                 <div class="settings-actions">
-                    <form action="{{ url_for('reset_chat_settings_route', chat_id=chat_id) }}" method="post" class="reset-form">
-                        <button type="submit" class="button-secondary" onclick="return confirm('Вы уверены, что хотите сбросить все продвинутые настройки для этого чата к значениям по умолчанию?');">Сбросить</button>
+                    <form action="{{ url_for('reset_chat_settings_route', chat_id=chat_id) }}" method="post" class="reset-form" style="margin-right: auto;">
+                        <button type="submit" class="button-secondary" onclick="return confirm('Вы уверены, что хотите сбросить локальные настройки этого персонажа в этом чате к его настройкам по умолчанию?');">Сбросить для этого чата</button>
                     </form>
-                    <button type="submit" form="advanced-settings-form">Сохранить</button>
+                    <button type="submit" name="save_action" value="save_for_chat_and_default" class="button-secondary">Сохранить для чата и по умолчанию</button>
+                    <button type="submit" name="save_action" value="save_for_chat" form="advanced-settings-form">Сохранить для этого чата</button>
                 </div>
             </form>
         </div>
@@ -388,55 +351,114 @@
     <h2>Авто-режим</h2>
     <div class="auto-mode-controls">
         {% if auto_mode_status == 'active' %}
-            <p style="color: var(--success-color); font-weight: 500;">Авто-режим <strong>активен</strong>.</p>
+            <p style="color: var(--success-text); font-weight: 600;">Авто-режим <strong>активен</strong>.</p>
             <form action="{{ url_for('stop_auto_mode', chat_id=chat_id) }}" method="post" style="display: inline;">
-                <button type="submit" class="button-danger">Остановить авто-режим</button>
+                <button type="submit">Остановить авто-режим</button>
             </form>
         {% elif auto_mode_status == 'stopping' %}
-            <p style="color: var(--warning-color); font-weight: 500;">Авто-режим <strong>останавливается...</strong></p>
-            <button type="button" disabled>Остановить авто-режим</button> {# Делаем кнопку неактивной во время остановки #}
-        {% else %} {# inactive or None #}
-             <p style="color: var(--secondary-color);">Авто-режим <strong>неактивен</strong>.</p>
+            <p style="color: var(--warning-text); font-weight: 600;">Авто-режим <strong>останавливается...</strong></p>
+            <button type="button" disabled>Остановить авто-режим</button>
+        {% else %}
+             <p>Авто-режим <strong>неактивен</strong>.</p>
              <form action="{{ url_for('start_auto_mode', chat_id=chat_id) }}" method="post" style="display: inline;">
-                 <button type="submit" class="button-success">Включить авто-режим</button>
+                 <button type="submit" style="background-color: #4CAF50; color: white;">Включить авто-режим</button>
              </form>
         {% endif %}
     </div>
-    <small style="display: block; margin-top: 10px;">Авто-режим будет проверять новые сообщения, генерировать и отправлять ответы согласно заданным правилам.</small>
+    <small style="display: block; margin-top: 10px;">Авто-режим будет проверять новые сообщения, генерировать и отправлять ответы согласно правилам активного персонажа.</small>
 </div>
 
 
-{% if generated_reply %}
-<div class="content-card generated-reply-section">
+<div id="generated-reply-container" class="content-card generated-reply-section" style="display: none;"> <!-- Изначально скрыт -->
     <h2>Сгенерированный ответ:</h2>
     <form action="{{ url_for('send_reply', chat_id=chat_id) }}" method="post">
         <div class="form-group">
-            <textarea name="message_to_send" rows="6" required>{{ generated_reply }}</textarea>
+            <textarea name="message_to_send" id="generated-reply-textarea" rows="6" required></textarea> <!-- Добавлен ID -->
         </div>
         <button type="submit">Отправить в Telegram</button>
     </form>
-</div> 
-{% endif %}
+</div>
 
 <div class="back-link-container"> 
     <a href="{{ url_for('index') }}">← Назад к выбору чата</a> 
 </div>
 
 <script>
+    function handleAjaxGeneration() {
+        const generateForm = document.getElementById('generate-form-character');
+        if (!generateForm) return;
+
+        const generateButton = generateForm.querySelector('.generate-button');
+        const spinner = generateButton.querySelector('.loading-spinner');
+        const replyContainer = document.getElementById('generated-reply-container');
+        const replyTextarea = document.getElementById('generated-reply-textarea');
+
+        generateForm.addEventListener('submit', function(event) {
+            
+            event.preventDefault();
+
+            
+            generateButton.disabled = true;
+            spinner.style.display = 'inline-block';
+            replyContainer.style.display = 'none'; 
+            replyTextarea.value = '';
+            
+            
+            const oldError = document.getElementById('generation-error-dynamic');
+            if (oldError) oldError.remove();
+
+            
+            fetch(generateForm.action, {
+                method: 'POST',
+                body: new FormData(generateForm)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    
+                    return response.json().then(errData => {
+                        throw new Error(errData.message || `Ошибка сервера: ${response.statusText}`);
+                    });
+                }
+                return response.json(); 
+            })
+            .then(data => {
+                
+                if (data.status === 'success') {
+                    replyTextarea.value = data.reply;
+                    replyContainer.style.display = 'block'; 
+                } else {
+                    
+                    throw new Error(data.message || 'Произошла неизвестная ошибка.');
+                }
+            })
+            .catch(error => {
+                
+                console.error('Ошибка при генерации ответа:', error);
+                
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-error';
+                errorDiv.id = 'generation-error-dynamic';
+                errorDiv.textContent = error.message;
+                generateForm.insertAdjacentElement('afterend', errorDiv);
+            })
+            .finally(() => {
+             
+                generateButton.disabled = false;
+                spinner.style.display = 'none';
+            });
+        });
+    }
     function handleStickerCopy() {
         const copyBtn = document.getElementById('copy-sticker-prompt-btn');
         if (!copyBtn) return;
 
         const stickerPromptText = copyBtn.dataset.stickerPrompt;
-
         
         if (!stickerPromptText || stickerPromptText.trim() === '') {
             copyBtn.disabled = true;
             copyBtn.title = "Нет активных стикеров для создания промпта";
             return; 
         }
-        
-
         
         copyBtn.addEventListener('click', () => {
              navigator.clipboard.writeText(stickerPromptText).then(() => {
@@ -449,7 +471,6 @@
                 }, 2000);
             }).catch(err => {
                 console.error('Ошибка копирования: ', err);
-                
                 const originalText = copyBtn.textContent;
                 copyBtn.textContent = '❌ Ошибка!';
                 copyBtn.disabled = true;
@@ -457,35 +478,29 @@
                     copyBtn.textContent = originalText;
                     copyBtn.disabled = false;
                 }, 2500);
-                
             });
         });
     }
     
-    // Функция для обработки спиннера загрузки
     function setupLoadingSpinners() {
-        // Находим ВСЕ кнопки генерации на странице
         const generateButtons = document.querySelectorAll('.generate-button');
         
         generateButtons.forEach(button => {
-            // У каждой кнопки ищем ближайшую форму
             const form = button.closest('form');
             if (form) {
                 form.addEventListener('submit', function() {
                     button.disabled = true;
-                    // Можно добавить спиннер рядом с кнопкой, если он есть в HTML
                 });
             }
         });
     }
 
-    // Запускаем наши функции, когда страница полностью загружена
     document.addEventListener('DOMContentLoaded', (event) => {
         handleStickerCopy();
         setupLoadingSpinners();
+        handleAjaxGeneration();
     });
 
-    // Обработка восстановления страницы из кеша браузера (кнопка "Назад")
     window.addEventListener('pageshow', function(event) {
         if (event.persisted) {
             const generateButtons = document.querySelectorAll('.generate-button');
