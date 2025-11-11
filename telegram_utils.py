@@ -4,24 +4,19 @@ import random
 import string
 import emoji
 import json  
-from telethon import TelegramClient, errors, functions, events
-from telethon.tl.functions.users import GetFullUserRequest 
+from telethon import TelegramClient, errors, functions
 from telethon.tl.functions.account import UpdateStatusRequest
 from telethon.tl.types import (
     MessageMediaPhoto, MessageMediaDocument, MessageMediaUnsupported, MessageMediaContact,
     MessageMediaGeo, MessageMediaGame, MessageMediaInvoice, MessageMediaPoll,
-    MessageMediaVenue, MessageMediaGeoLive, MessageMediaWebPage,
-    MessageService, DocumentAttributeVideo, DocumentAttributeAudio, DocumentAttributeSticker,
-    SendMessageTypingAction, SendMessageRecordAudioAction, SendMessageRecordVideoAction,
-    UserStatusOnline, UserStatusOffline, UserStatusRecently, UserStatusLastWeek, UserStatusLastMonth,
-    InputDocument, SendMessageChooseStickerAction, ReactionEmoji
-
+    MessageMediaVenue,
+    MessageService, DocumentAttributeVideo, DocumentAttributeAudio,
+    InputDocument, SendMessageChooseStickerAction, ReactionEmoji,
+    MessageReactions, ReactionCustomEmoji, PeerUser
 )
-from datetime import timedelta, datetime 
+from datetime import timedelta
 import logging
-import threading 
 import base64
-import io
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s') 
 logging.getLogger('telethon').setLevel(logging.WARNING)
@@ -106,14 +101,15 @@ async def update_online_status_periodically(client_instance):
 def make_human_like_typos(text: str,
                     substitution_chance=0.005,
                     transposition_chance=0.005,
-                    skip_chance=0.002) -> str:
+                    skip_chance=0.002,
+                    lower_chance=0.01) -> str:
     """
     Добавляет в текст человекоподобные опечатки для русского и английского языков,
-    СТРОГО ИЗБЕГАЯ замены букв одного языка на буквы другого.
+    cтрого избешая замены букв одного языка на буквы другого.
 
     Args:
         text: Исходный текст.
-        substitution_chance: Вероятность замены буквы на соседнюю ПО ТОЙ ЖЕ РАСКЛАДКЕ (на символ).
+        substitution_chance: Вероятность замены буквы на соседнюю по той же ракадке (на символ).
         transposition_chance: Вероятность перестановки двух соседних букв (на символ).
         skip_chance: Вероятность пропуска (удаления) буквы или цифры (на символ).
 
@@ -271,6 +267,12 @@ def make_human_like_typos(text: str,
 
 
     chars = list(text)
+
+    if lower_chance > 0:
+        for i in range(1, len(chars)):
+            if chars[i-1] == '.' and chars[i].isupper() and random.random() < lower_chance:
+                chars[i] = chars[i].lower()
+
     new_chars = []
     i = 0
     while i < len(chars):
@@ -356,7 +358,8 @@ EMOJI_PATTERN = re.compile(
 def final_fine_tune_sms(comment: str,                     
                     substitution_chance=0.005,
                     transposition_chance=0.005,
-                    skip_chance=0.002) -> str:
+                    skip_chance=0.002,
+                    lower_chance=0.01) -> str:
     if not comment:
         return "" 
 
@@ -375,27 +378,23 @@ def final_fine_tune_sms(comment: str,
 
     cleaned_comment = re.sub(r'(.)\1{45,}', lambda m: m.group(1) * 25, cleaned_comment)
 
-    # Если бот присылает более пяти одинаковых эмодзи подряд,
     cleaned_comment = re.sub(
         f'{EMOJI_PATTERN.pattern}\\1{{5,}}', 
         lambda m: m.group(1) * 5, 
         cleaned_comment
     )
 
-    # Если подряд идет больше 14 любых эмодзи, оставляем только первые 14.
     def truncate_emoji_sequence(match):
         long_sequence = match.group(0)
         emojis_in_sequence = EMOJI_PATTERN.findall(long_sequence)
         return ''.join(emojis_in_sequence[:14])
 
-    # Ищем последовательность из 15 или более эмодзи подряд
     cleaned_comment = re.sub(
         f'(?:{EMOJI_PATTERN.pattern}){{15,}}', 
         truncate_emoji_sequence, 
         cleaned_comment
     )
     
-    # ------
     
     n = len(cleaned_comment)
     last_significant_char_index = -1
@@ -410,7 +409,7 @@ def final_fine_tune_sms(comment: str,
         if last_significant_char_index == 0 or cleaned_comment[last_significant_char_index - 1] != '.':
             cleaned_comment = cleaned_comment[:last_significant_char_index] + cleaned_comment[last_significant_char_index + 1:]
 
-    return make_human_like_typos(cleaned_comment, substitution_chance, transposition_chance, skip_chance)
+    return make_human_like_typos(cleaned_comment, substitution_chance, transposition_chance, skip_chance, lower_chance)
 
 async def connect_telegram(api_id, api_hash, session_name='telegram_session'):
     """Подключается к Telegram (выполняется в цикле telegram_loop)."""
@@ -478,12 +477,10 @@ async def get_chats(limit=50):
         dialogs = await client.get_dialogs(limit=limit)
         for dialog in dialogs:
             entity = dialog.entity
-            # Явно пропускаем каналы
             if hasattr(entity, 'broadcast') and entity.broadcast:
                 logging.debug(f"Пропущен канал: {dialog.name} (ID: {dialog.id})")
                 continue
 
-            # Обрабатываем только личные чаты и группы
             if dialog.is_user or dialog.is_group:
 
                 chat_info = {
@@ -536,6 +533,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
     """
     Получает историю сообщений, форматирует ее и объединяет последовательные сообщения
     от одного и того же отправителя. КЕШИРУЕТ МЕДИА для быстрой перезагрузки.
+    ИСПРАВЛЕНА ЛОГИКА ОБРАБОТКИ РЕАКЦИЙ.
     """
     global my_id, MESSAGE_MEDIA_CACHE
     if not client or not client.is_connected() or not await client.is_user_authorized():
@@ -550,7 +548,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
             return [], f"Error getting user ID: {e}"
 
     if settings is None:
-        settings = {} 
+        settings = {}
+
+    replace_placeholder_with_empty = settings.get('ignore_all_media', False)
 
     raw_intermediate_list = []
     error_message = None
@@ -563,23 +563,56 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
         messages = await client.get_messages(chat_id, limit=limit)
         logging.info(f"Получено {len(messages)} сообщений.")
 
-        if messages:
-            try:
-                await client.send_read_acknowledge(chat_id, max_id=messages[0].id)
-            except Exception as read_err:
-                logging.warning(f"Не удалось отметить сообщения как прочитанные: {read_err}")
-        
+        if not messages:
+            return [], None
+
+        try:
+            await client.send_read_acknowledge(chat_id, max_id=messages[0].id)
+        except Exception as read_err:
+            logging.warning(f"Не удалось отметить сообщения как прочитанные: {read_err}")
+
+        all_reactions_on_messages = {}
+        for msg in messages:
+            
+            if msg and isinstance(msg.reactions, MessageReactions) and msg.reactions.recent_reactions:
+                reactions_list = []
+                for recent_reaction in msg.reactions.recent_reactions:
+                    
+                    if hasattr(recent_reaction, 'peer_id') and hasattr(recent_reaction, 'reaction'):
+                        
+                        reactor_id = recent_reaction.peer_id.user_id
+                        emoji = ''
+                        
+                        if isinstance(recent_reaction.reaction, ReactionEmoji):
+                            emoji = recent_reaction.reaction.emoticon
+
+                        if reactor_id and emoji:
+                            reactions_list.append((reactor_id, emoji))
+
+                if reactions_list:
+                    all_reactions_on_messages[msg.id] = reactions_list
+
+        pending_reactions_to_attach = {}
+
         messages.reverse()
 
         for msg in messages:
             if isinstance(msg, MessageService) or not msg.sender_id:
                 continue
 
+            if msg.id in all_reactions_on_messages:
+                for reactor_id, emoji in all_reactions_on_messages[msg.id]:
+                    if reactor_id not in pending_reactions_to_attach:
+                        pending_reactions_to_attach[reactor_id] = []
+                    reaction_string = f"react({msg.id})[{emoji}]"
+                    if reaction_string not in pending_reactions_to_attach[reactor_id]:
+                         pending_reactions_to_attach[reactor_id].append(reaction_string)
+
             role = "model" if msg.sender_id == my_id else "user"
             timestamp_str = msg.date.strftime("%Y-%m-%d %H:%M:%S")
             id_prefix = f"(ID: {msg.id}) " if role == "user" or is_group_chat else ""
             timestamp_info = f"{id_prefix}\n[{timestamp_str}]"
-            
+
             sender_prefix = ""
             if is_group_chat and role == "user":
                 sender = msg.sender
@@ -589,45 +622,50 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 if not sender_name: sender_name = getattr(sender, 'username', f"User_{sender.id}") or f"User_{sender.id}"
                 sender_prefix = f"<ник:{sender_name.strip()}> "
 
-            reply_prefix = f"answer({msg.reply_to_msg_id})\n" if msg.reply_to_msg_id else ""
+            reactions_prefix = ""
             
+            if msg.sender_id in pending_reactions_to_attach:
+                reactions_prefix = "\n".join(pending_reactions_to_attach[msg.sender_id]) + "\n"
+                del pending_reactions_to_attach[msg.sender_id]
+
+            reply_prefix = f"answer({msg.reply_to_msg_id})\n" if msg.reply_to_msg_id else ""
+
             is_media_message = False
             content_parts = []
             content_text = ""
-            
+
             cache_key = (chat_id, msg.id)
             if msg.media and cache_key in MESSAGE_MEDIA_CACHE:
                 cached_data = MESSAGE_MEDIA_CACHE[cache_key]
                 mime_type = cached_data[0].get('mime_type')
                 can_see = True
-                placeholder = "[Медиа] - не удалось загрузить"
+                placeholder = "[Медиа]"
 
                 if mime_type == 'image/jpeg':
                     can_see = settings.get('can_see_photos', True)
-                    placeholder = "" #[Изображение] - не удалось загрузит＃
+                    placeholder = "[Изображение]"
                 elif mime_type == 'video/mp4':
                     can_see = settings.get('can_see_videos', True)
-                    placeholder = "[Видео] - не удалось загрузить"
+                    placeholder = "[Видео]"
                 elif mime_type in ['audio/mpeg', 'audio/ogg']:
                     can_see = settings.get('can_see_audio', True)
-                    placeholder = "[Аудио] - не удалось загрузить"
+                    placeholder = "[Аудио]"
                 elif mime_type == 'application/pdf':
                     can_see = settings.get('can_see_files_pdf', True)
-                    placeholder = "[PDF-файл] - не удалось загрузить"
+                    placeholder = "[PDF-файл]"
 
                 if can_see:
                     content_parts.extend(cached_data)
                     is_media_message = True
                     logging.debug(f"Использованы кешированные медиа ({mime_type}) для сообщения {msg.id}")
                 else:
-                    content_text = f"{placeholder} - не удалось загрузить"
+                    content_text = "" if replace_placeholder_with_empty else placeholder
 
             elif msg.media:
-                is_media_message = True 
+                is_media_message = True
                 media_processed_to_base64 = False
                 temp_media_parts = []
-                
-                # === Переработанная логика обработки медиа ===
+
                 if isinstance(msg.media, MessageMediaPhoto):
                     if settings.get('can_see_photos', True):
                         image_bytes = await msg.download_media(file=bytes)
@@ -638,7 +676,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                             }]
                             media_processed_to_base64 = True
                     else:
-                        content_text = "" #[Изображение]- не удалось загрузить
+                        content_text = "" if replace_placeholder_with_empty else "[Изображение]"
                         is_media_message = False
 
                 elif isinstance(msg.media, MessageMediaDocument):
@@ -652,7 +690,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
 
                     if is_video:
                         is_round = any(getattr(attr, 'round_message', False) for attr in doc_attrs)
-                        placeholder = "[Видео-кружок]- не удалось загрузить" if is_round else "[Видео]- не удалось загрузить"
+                        placeholder = "[Видео-кружок]" if is_round else "[Видео]"
                         if settings.get('can_see_videos', True):
                             if doc_mime == 'video/mp4':
                                 video_bytes = await msg.download_media(file=bytes)
@@ -663,15 +701,15 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                                     }]
                                     media_processed_to_base64 = True
                             else:
-                                content_text = f"{placeholder}"
+                                content_text = "" if replace_placeholder_with_empty else placeholder
                                 is_media_message = False
                         else:
-                            content_text = f"{placeholder}"
+                            content_text = "" if replace_placeholder_with_empty else placeholder
                             is_media_message = False
 
                     elif is_audio:
                         is_voice = any(getattr(attr, 'voice', False) for attr in doc_attrs)
-                        placeholder = "[Голосовое сообщение]  - не удалось загрузить" if is_voice else "[Аудиофайл]  - не удалось загрузить" 
+                        placeholder = "[Голосовое сообщение]" if is_voice else "[Аудиофайл]"
                         if settings.get('can_see_audio', True):
                              if doc_mime in ['audio/mpeg', 'audio/ogg']:
                                 audio_bytes = await msg.download_media(file=bytes)
@@ -682,14 +720,14 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                                     }]
                                     media_processed_to_base64 = True
                              else:
-                                content_text = f"{placeholder} (тип {doc_mime}) - не удалось загрузить"
+                                content_text = "" if replace_placeholder_with_empty else f"{placeholder} (тип {doc_mime})"
                                 is_media_message = False
                         else:
-                            content_text = f"{placeholder} - не удалось загрузить"
+                            content_text = "" if replace_placeholder_with_empty else placeholder
                             is_media_message = False
 
                     elif is_pdf:
-                        placeholder = "[PDF-файл] - не удалось загрузить"
+                        placeholder = "[PDF-файл]"
                         if settings.get('can_see_files_pdf', True):
                             pdf_bytes = await msg.download_media(file=bytes)
                             if pdf_bytes:
@@ -699,16 +737,16 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                                 }]
                                 media_processed_to_base64 = True
                         else:
-                            content_text = f"{placeholder} - не удалось загрузить"
+                            content_text = "" if replace_placeholder_with_empty else placeholder
                             is_media_message = False
-                    
-                    else: 
-                        content_text = "[Документ]- не удалось загрузить"
+
+                    else:
+                        content_text = "" if replace_placeholder_with_empty else "[Документ]"
                         is_media_message = False
-                
-                else: 
+
+                else:
                     media_type_description = "[Медиа]"
-                    
+
                     if isinstance(msg.media, MessageMediaContact): media_type_description = "[Контакт]"
                     elif isinstance(msg.media, MessageMediaGeo): media_type_description = "[Геопозиция]"
                     elif isinstance(msg.media, MessageMediaPoll): media_type_description = "[Опрос]"
@@ -716,9 +754,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                     elif isinstance(msg.media, MessageMediaGame): media_type_description = "[Игра]"
                     elif isinstance(msg.media, MessageMediaInvoice): media_type_description = "[Счет]"
                     elif isinstance(msg.media, MessageMediaUnsupported): media_type_description = "[Неподдерживаемое сообщение]"
-                    content_text = f"{media_type_description} - не удалось загрузить"
+                    content_text = "" if replace_placeholder_with_empty else f"{media_type_description}"
                     is_media_message = False
-                
+
                 if media_processed_to_base64 and temp_media_parts:
                     content_parts.extend(temp_media_parts)
                     MESSAGE_MEDIA_CACHE[cache_key] = temp_media_parts
@@ -732,7 +770,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 codename = STICKER_ID_TO_CODENAME.get(msg.sticker.id, '')
                 content_text = f"sticker({codename})" if codename else f"[Стикер]"
 
-            full_text_block = f"{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
+            full_text_block = f"{reactions_prefix}{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
 
             content_parts.insert(0, {"text": full_text_block})
 
@@ -740,9 +778,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 "role": role,
                 "parts": content_parts,
                 "is_media": is_media_message,
-                "_original_msg": msg 
+                "_original_msg": msg
             })
-
+    
         final_formatted_messages = []
         if not raw_intermediate_list:
             return [], None
@@ -759,7 +797,10 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 last_msg_obj = last_entry.get("_original_msg")
                 last_is_media = last_entry.get("is_media", False)
                 
+                has_reaction_prefix = any('react(' in p.get('text', '') for p in current_parts)
+                
                 if (last_msg_obj and not current_is_media and not last_is_media and
+                    not has_reaction_prefix and
                     current_role == last_entry["role"] and
                     current_msg_obj.sender_id == last_msg_obj.sender_id and
                     (current_msg_obj.date - last_msg_obj.date) < group_delta):
@@ -769,7 +810,8 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 text_to_append = "\n".join([p['text'] for p in current_parts if 'text' in p])
                 for part in last_entry["parts"]:
                     if 'text' in part:
-                        part["text"] += f"{split_separator}{text_to_append}"
+                        text_to_append_cleaned = re.sub(r"^\(ID: \d+\)\s*\n\[\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\]\n(<ник:.*?>\s)?", "", text_to_append)
+                        part["text"] += f"{split_separator}{text_to_append_cleaned}"
                         break
                 last_entry["_original_msg"] = current_msg_obj
             else:
@@ -868,9 +910,7 @@ async def send_telegram_message(chat_id, message_text, settings=None):
         return False, "Telegram client not connected or authorized."
 
     reply_to_id = None
-    original_message_text = message_text
 
-    # Ищем ПЕРВЫЙ тег, чтобы определить, на какое сообщение отвечать
     first_match = re.search(r"answer\s*\((\d+)\)", message_text, re.IGNORECASE)
 
     if first_match:
@@ -882,7 +922,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
             logging.warning(f"Не удалось преобразовать ID '{id_to_reply_str}' в число. Сообщение будет отправлено без ответа.")
             reply_to_id = None
 
-    # Удаляем ВСЕ вхождения тега из текста сообщения, чтобы очистить его
     message_text = re.sub(r"answer\s*\((\d+)\)", '', message_text, flags=re.IGNORECASE).strip()
     
     if first_match:
@@ -898,12 +937,15 @@ async def send_telegram_message(chat_id, message_text, settings=None):
             sub_chance = settings.get('substitution_chance', 0.005)
             trans_chance = settings.get('transposition_chance', 0.005)
             skip_chance_val = settings.get('skip_chance', 0.002)
+            lower_chance_val = settings.get('lower_chance', 0.05)
+
             
             message_text = final_fine_tune_sms(
                 message_text,
                 substitution_chance=sub_chance,
                 transposition_chance=trans_chance,
-                skip_chance=skip_chance_val
+                skip_chance=skip_chance_val,
+                lower_chance=lower_chance_val
             )
         else:
             message_text = final_fine_tune_sms(message_text)
@@ -925,7 +967,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
             max_think_s = settings.get('base_thinking_delay_s_max', 2.8)
             max_duration = settings.get('max_typing_duration_s', 25.0)
         else:
-            # Значения по умолчанию
             min_delay_ms, max_delay_ms = 40.0, 90.0
             min_think_s, max_think_s = 1.2, 2.8
             max_duration = 25.0
@@ -937,7 +978,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
         
         if max_duration > 0:
             total_typing_duration_s = max(1.5, min(total_typing_duration_s, max_duration))
-        # Если максимальная длительность равна 0, значит пользователь хочет мгновенный ответ.
         else:
             total_typing_duration_s = 0.0
             base_thinking_delay_s = 0.0 

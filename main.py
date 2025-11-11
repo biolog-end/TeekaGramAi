@@ -86,6 +86,7 @@ DEFAULT_CHAT_SETTINGS = {
     "can_see_videos": True,
     "can_see_audio": True,
     "can_see_files_pdf": True,
+    "ignore_all_media": False, 
     # Для Auto-Mode
     "auto_mode_check_interval": 3.5,
     "auto_mode_initial_wait": 6.0,
@@ -103,7 +104,9 @@ DEFAULT_CHAT_SETTINGS = {
     "substitution_chance": 0.005,
     "transposition_chance": 0.005,
     "skip_chance": 0.002,
+    "lower_chance": 0.05,
 }
+
 
 auto_mode_workers = {} 
 auto_mode_lock = threading.Lock() 
@@ -411,6 +414,27 @@ def split_message_by_limit(text: str, limit: int) -> list[str]:
 
     return chunks
 
+def replace_standalone_sticker_names(text: str) -> str:
+    """
+    Находит "одинокие" кодовые имена стикеров в тексте и оборачивает их в команду sticker().
+    Оптимизирована для запуска только если в тексте есть потенциальные английские слова,
+    и избегает оборачивания уже корректно отформатированных команд.
+    """
+    if not text or not re.search(r'[a-zA-Z]{3,}', text):
+        return text
+
+    sticker_codenames = sorted(list(STICKER_DB.keys()), key=len, reverse=True)
+    if not sticker_codenames:
+        return text
+
+    processed_text = text
+    for codename in sticker_codenames:
+        pattern = r'(?<!sticker\s*\(\s*)' + r'\b' + re.escape(codename) + r'\b'
+        replacement = f'sticker({codename})'
+        processed_text = re.sub(pattern, replacement, processed_text, flags=re.IGNORECASE)
+
+    return processed_text
+
 def send_generated_reply(chat_id: int, message_text: str, settings: dict = None):
     """
     Централизованная функция для отправки сгенерированного ответа.
@@ -427,6 +451,11 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
     else:
         logging.debug(f"send_generated_reply: используются переданные настройки для чата {chat_id}")
         settings_to_use = settings
+
+    try:
+        message_text = replace_standalone_sticker_names(message_text)
+    except Exception as e:
+        logging.error(f"Ошибка при исправлении имен стикеров: {e}", exc_info=True)
 
     VALID_REACTIONS = ['👍', '❤️', '🔥', '🎉', '🤩', '😱', '😁', '😢', '🤔', '👎', '💩', '🤔']
 
@@ -670,7 +699,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                          last_processed_user_msg_time = latest_message_time
 
             if should_generate:
-                chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id)) # Получаем инфо о чате
+                chat_info, _ = run_in_telegram_loop(get_chat_info(chat_id))
                 
                 model_name_from_settings = settings_for_generation.get('model_name', '')
                 model_name_to_use = model_name_from_settings or BASE_GEMENI_MODEL
@@ -696,7 +725,6 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                     stop_event.wait(15)
                     continue
                 
-                # --- БЛОК АВТО-ПАМЯТИ С ПРОВЕРКОЙ ---
                 if settings_for_generation.get('enable_auto_memory', True):
                     with auto_mode_lock:
                         bot_last_message_anchor = auto_mode_workers.get(chat_id, {}).get("bot_last_message_anchor")
@@ -730,7 +758,6 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                                 logging.info(f"[{worker_name}] Авто-память: Установлен новый якорь: '{new_anchor_text[:50] if new_anchor_text else 'None'}'")
                 else:
                     logging.info(f"[{worker_name}] Авто-память отключена в настройках персонажа. Пропуск обновления.")
-                # --- КОНЕЦ БЛОКА АВТО-ПАМЯТИ ---
 
                 tools = []
                 if settings_for_generation.get('enable_google_search', False):
@@ -813,7 +840,6 @@ def select_chat():
         return redirect(url_for('index'))
     try:
         chat_id = int(chat_id_str)
-        session['current_chat_id'] = chat_id
         logging.info(f"Выбран чат с ID: {chat_id}")
         session.pop('generated_reply', None)
         session.pop('last_generation_error', None)
@@ -831,8 +857,6 @@ def generate_reply(chat_id):
     Обрабатывает ручную генерацию ответа и возвращает результат в формате JSON.
     """
     logging.info(f"Запрос POST /generate/{chat_id} (AJAX)")
-    if session.get('current_chat_id') != chat_id:
-        return jsonify({'status': 'error', 'message': 'Ошибка сессии или ID чата.'}), 400
 
     settings_for_generation = get_chat_settings(chat_id)
     character_id = settings_for_generation.get('active_character_id')
@@ -895,10 +919,6 @@ def generate_reply(chat_id):
 @app.route('/chat/<sint:chat_id>')
 def chat_page(chat_id):
     logging.info(f"Запрос GET /chat/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-         flash("ID чата в URL не совпадает с выбранным. Пожалуйста, выберите чат заново.", "warning")
-         session['current_chat_id'] = chat_id
-         session.pop('chat_info', None) 
 
     settings_to_use = get_chat_settings(chat_id)
     active_character_id = settings_to_use.get('active_character_id')
@@ -981,9 +1001,6 @@ def update_sticker_status(chat_id):
     Обновляет статусы стикеров для активного персонажа в этом чате.
     """
     logging.info(f"Запрос POST /update_sticker_status/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии при обновлении статусов стикеров.", "error")
-        return redirect(url_for('index'))
 
     enabled_codenames = request.form.getlist('sticker_enabled')
     
@@ -1009,9 +1026,6 @@ def update_sticker_status(chat_id):
 @app.route('/start_auto_mode/<sint:chat_id>', methods=['POST'])
 def start_auto_mode(chat_id):
     logging.info(f"Запрос POST /start_auto_mode/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии или ID чата при запуске авто-режима.", "error")
-        return redirect(url_for('index'))
 
     with auto_mode_lock:
         if chat_id in auto_mode_workers and auto_mode_workers[chat_id]["thread"] and auto_mode_workers[chat_id]["thread"].is_alive():
@@ -1042,9 +1056,6 @@ def start_auto_mode(chat_id):
 @app.route('/stop_auto_mode/<sint:chat_id>', methods=['POST'])
 def stop_auto_mode(chat_id):
     logging.info(f"Запрос POST /stop_auto_mode/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии или ID чата при остановке авто-режима.", "error")
-        return redirect(url_for('index'))
 
     with auto_mode_lock:
         worker_info = auto_mode_workers.get(chat_id)
@@ -1067,21 +1078,16 @@ def stop_auto_mode(chat_id):
 @app.route('/save_chat_settings/<sint:chat_id>', methods=['POST'])
 def save_chat_settings_route(chat_id):
     """
-    Сохраняет продвинутые настройки и контекст чата.
+    Сохраняет продвинутые настройки.
     Может сохранять их только для текущего чата или еще и в дефолтные настройки персонажа.
     """
     logging.info(f"Запрос POST /save_chat_settings/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии при сохранении настроек.", "error")
-        return redirect(url_for('index'))
 
-    # Определяем, какая кнопка была нажата
     save_action = request.form.get('save_action')
     if not save_action:
         flash("Действие для сохранения не определено.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # Получаем ID активного персонажа из настроек чата
     all_chat_settings = load_chat_settings()
     character_id = all_chat_settings.get(chat_id, {}).get('active_character_id')
 
@@ -1089,13 +1095,13 @@ def save_chat_settings_route(chat_id):
         flash("Активный персонаж не выбран. Настройки не сохранены.", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # --- Сбор данных из формы ---
     try:
         advanced_settings_data = {
             'can_see_photos': 'can_see_photos' in request.form,
             'can_see_videos': 'can_see_videos' in request.form,
             'can_see_audio': 'can_see_audio' in request.form,
             'can_see_files_pdf': 'can_see_files_pdf' in request.form,
+            'ignore_all_media': 'ignore_all_media' in request.form, 
             'enable_auto_memory': 'enable_auto_memory' in request.form,
             'auto_mode_check_interval': float(request.form.get('auto_mode_check_interval')),
             'auto_mode_initial_wait': float(request.form.get('auto_mode_initial_wait')),
@@ -1115,27 +1121,22 @@ def save_chat_settings_route(chat_id):
             'substitution_chance': float(request.form.get('substitution_chance')),
             'transposition_chance': float(request.form.get('transposition_chance')),
             'skip_chance': float(request.form.get('skip_chance')),
+            'lower_chance': float(request.form.get('lower_chance')),
         }
-        # Контекст чата (chat_context_prompt)
-        chat_context_prompt = request.form.get('chat_context_prompt', '')
     except (ValueError, TypeError) as e:
         flash(f"Ошибка в числовых данных: {e}", "error")
         return redirect(url_for('chat_page', chat_id=chat_id))
 
-    # --- Логика сохранения ---
     
-    # 1. Сохраняем в настройки чата (chat_settings.json)
     if chat_id not in all_chat_settings: all_chat_settings[chat_id] = {}
     if 'character_specifics' not in all_chat_settings[chat_id]: all_chat_settings[chat_id]['character_specifics'] = {}
     if character_id not in all_chat_settings[chat_id]['character_specifics']: all_chat_settings[chat_id]['character_specifics'][character_id] = {}
     
     all_chat_settings[chat_id]['character_specifics'][character_id]['advanced_settings'] = advanced_settings_data
-    all_chat_settings[chat_id]['character_specifics'][character_id]['chat_context_prompt'] = chat_context_prompt
     
     save_chat_settings(all_chat_settings)
     logging.info(f"Сохранены настройки для персонажа {character_id} в чате {chat_id}.")
 
-    # 2. Если нужно, сохраняем в дефолтные настройки персонажа (characters.json)
     if save_action == 'save_for_chat_and_default':
         all_characters = character_utils.load_characters()
         if character_id in all_characters:
@@ -1160,9 +1161,6 @@ def reset_chat_settings_route(chat_id):
     возвращая их к глобальным настройкам персонажа по умолчанию.
     """
     logging.info(f"Запрос POST /reset_chat_settings/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии при сбросе настроек.", "error")
-        return redirect(url_for('index'))
 
     all_settings = load_chat_settings()
     character_id = all_settings.get(chat_id, {}).get('active_character_id')
@@ -1200,34 +1198,35 @@ def set_active_character(chat_id):
     flash(f"Для этого чата выбран персонаж: '{character_name}'.", "success")
     return redirect(url_for('chat_page', chat_id=chat_id))
 
-
 @app.route('/character/create', methods=['POST'])
 def create_character():
     """Создает нового пустого персонажа."""
     logging.info("Запрос POST /character/create")
     character_name = request.form.get('new_character_name', 'Новый персонаж')
+    
+    chat_id_str = request.form.get('chat_id') 
+    
     new_id = character_utils.create_new_character(character_name)
     if new_id:
         flash(f"Персонаж '{character_name}' успешно создан!", "success")
     else:
         flash("Не удалось создать персонажа.", "error")
     
-    # Возвращаемся на страницу чата, с которого пришли
-    chat_id = session.get('current_chat_id')
+    try:
+        chat_id = int(chat_id_str) if chat_id_str else None
+    except (ValueError, TypeError):
+        chat_id = None
+        
     return redirect(url_for('chat_page', chat_id=chat_id) if chat_id else url_for('index'))
 
 
-@app.route('/character/save/<character_id>', methods=['POST'])
-def save_character(character_id):
+@app.route('/character/save/<character_id>/<sint:chat_id>', methods=['POST'])
+def save_character(character_id, chat_id):
     """
     Сохраняет все данные персонажа из формы, А ТАКЖЕ специфичный для чата контекст.
     """
-    logging.info(f"Запрос POST /character/save/{character_id}")
-    chat_id = session.get('current_chat_id')
-    if not chat_id:
-        flash("Ошибка сессии: чат не определен.", "error")
-        return redirect(url_for('index'))
-
+    logging.info(f"Запрос POST /character/save/{character_id} для чата {chat_id}")
+    
     characters = character_utils.load_characters()
     if character_id not in characters:
         flash("Персонаж для сохранения не найден.", "error")
@@ -1302,9 +1301,6 @@ def update_memory_route(chat_id):
 @app.route('/send/<sint:chat_id>', methods=['POST'])
 def send_reply(chat_id):
     logging.info(f"Запрос POST /send/{chat_id}")
-    if session.get('current_chat_id') != chat_id:
-        flash("Ошибка сессии или ID чата. Пожалуйста, выберите чат заново.", "error")
-        return redirect(url_for('index'))
 
     message_to_send = request.form.get('message_to_send')
 

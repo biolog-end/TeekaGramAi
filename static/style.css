@@ -1,4 +1,3 @@
-/* --- ИЗМЕНЕН ФАЙЛ --- */
 :root {
     --bg-gradient-start: #fffdf6; 
     --bg-gradient-end: #fff9e6;   
@@ -326,7 +325,7 @@ button[type="submit"]:disabled {
     background-color: var(--card-bg-color);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-medium);
-    list-style: none; /* Убирает стандартный маркер */
+    list-style: none; 
     transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -342,7 +341,7 @@ button[type="submit"]:disabled {
 }
 
 .advanced-settings-details > summary::-webkit-details-marker {
-    display: none; /* Убирает маркер в Chrome/Safari */
+    display: none; 
 }
 
 .advanced-settings-details > summary::after {
@@ -435,7 +434,7 @@ button[type="submit"]:disabled {
     border-top: 1px solid var(--border-color);
 }
 .settings-actions .reset-form {
-    margin: 0; /* Убираем лишние отступы у формы */
+    margin: 0;
 }
 
 .checkbox-label {
@@ -453,7 +452,6 @@ button[type="submit"]:disabled {
     accent-color: var(--button-primary-bg);
 }
 
-/* Стили для кнопок в этом блоке */
 .settings-actions button[type="submit"] {
     background-color: var(--primary-accent-color);
 }
@@ -685,8 +683,6 @@ small {
     .back-link-container a { font-size: 1em; }
 }
 
-
-/* --- Общие стили для секций управления персонажем --- */
 .character-management-section,
 .character-editor-section,
 .character-actions-section {
@@ -707,35 +703,32 @@ small {
     border-bottom: 1px dashed var(--border-color);
 }
 
-/* --- Цветовое кодирование полей ввода --- */
 .prompt-field {
     border-left-width: 5px;
     padding-left: 20px;
 }
 .personality-field {
-    border-left-color: #81d4fa; /* info */
+    border-left-color: #81d4fa;
     background-color: #f0f9ff;
 }
 .memory-field {
-    border-left-color: #c5e1a5; /* success */
+    border-left-color: #c5e1a5; 
     background-color: #f7fcf2;
 }
 .system-field {
-    border-left-color: #fff59d; /* warning */
+    border-left-color: #fff59d; 
     background-color: #fffef6;
 }
 .memory-update-field {
-    border-left-color: #ef9a9a; /* error */
+    border-left-color: #ef9a9a;
     background-color: #fff6f6;
 }
 .context-field {
-    border-left-color: #b39ddb; /* purple */
+    border-left-color: #b39ddb; 
     background-color: #f6f3f9;
 }
-
-/* Улучшенная кнопка создания персонажа */
 .character-creator button.button-success {
-    background-color: #4CAF50; /* Зеленый */
+    background-color: #4CAF50; 
     width: 100%;
 }
 .character-creator button.button-success:hover:not(:disabled) {
@@ -771,13 +764,12 @@ small {
     background-color: var(--button-secondary-hover);
 }
 
-/* Обновление стилей для лучшего сочетания */
 .character-management {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 20px;
-    margin-bottom: 0; /* Убираем нижний отступ, т.к. секция теперь имеет свой */
+    margin-bottom: 0; 
 }
 .character-actions {
     display: flex;
@@ -793,5 +785,5 @@ small {
     min-width: 200px;
 }
 .character-actions form:last-child {
-    flex-grow: 0; /* Не растягивать кнопку "Добавить в память" */
+    flex-grow: 0; 
 }

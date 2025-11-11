@@ -1,4 +1,3 @@
-<!-- --- ИЗМЕНЕН ФАЙЛ --- -->
 {% extends "base.html" %}
 
 {% block title %}Чат с {{ chat_info.name if chat_info else '...' }}{% endblock %}
@@ -80,7 +79,7 @@
     {% endif %}
 
     <div>
-        <div class="character-management-section">
+<div class="character-management-section">
             <h4>1. Выбор и создание персонажа</h4>
             <div class="character-management">
                 <div class="character-selector">
@@ -96,6 +95,7 @@
                 </div>
                 <div class="character-creator">
                     <form action="{{ url_for('create_character') }}" method="POST">
+                        <input type="hidden" name="chat_id" value="{{ chat_id }}">
                         <input type="text" name="new_character_name" placeholder="Имя нового персонажа" required>
                         <button type="submit" class="button-success">✨ Создать</button>
                     </form>
@@ -106,7 +106,7 @@
         {% if active_character_id and active_character_data %}
         <div class="character-editor-section">
             <h4>2. Редактор персонажа: "{{ active_character_data.name }}"</h4>
-            <form action="{{ url_for('save_character', character_id=active_character_id) }}" method="POST" id="character-data-form">
+            <form action="{{ url_for('save_character', character_id=active_character_id, chat_id=chat_id) }}" method="POST" id="character-data-form">
                 <div class="form-group"><label>Имя персонажа:</label><input type="text" name="character_name" value="{{ active_character_data.name }}"></div>
                 <div class="form-group"><label>👤 Личность персонажа:</label><textarea name="personality_prompt" class="prompt-field personality-field" rows="5">{{ active_character_data.personality_prompt }}</textarea></div>
                 <div class="form-group">
@@ -216,6 +216,13 @@
                             <input type="checkbox" name="can_see_files_pdf" id="can_see_files_pdf" value="true" {% if chat_settings.get('can_see_files_pdf', True) %}checked{% endif %}>
                             Может читать файлы (PDF)
                         </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="ignore_all_media" value="true" {% if chat_settings.get('ignore_all_media', False) %}checked{% endif %}>
+                            Полностью игнорировать все медиа (пустота)
+                        </label>
+                        <small>Если включено, фото, видео и файлы будут заменены на пустоту, а не на заглушку "[Медиа]".</small>
                     </div>
                 </div>
                 <h4>Настройки памяти</h4>
@@ -333,11 +340,19 @@
                     <input type="number" step="0.0001" min="0" max="1" name="skip_chance" id="skip_chance" value="{{ chat_settings.get('skip_chance', 0.002) }}" required>
                     <small>Шанс случайного удаления буквы или цифры. Дефолт: 0.002</small>
                 </div>
+                <div class="form-group">
+                    <label for="lower_chance">Шанс строчной буквы после точки</label>
+                    <input type="number" step="0.01" min="0" max="1" name="lower_chance" id="lower_chance" value="{{ chat_settings.get('lower_chance', 0.01) }}" required>
+                    <small>Вероятность "забыть" Shift после точки. Дефолт: 0.01</small>
+                </div>
                 
                 <div class="settings-actions">
-                    <form action="{{ url_for('reset_chat_settings_route', chat_id=chat_id) }}" method="post" class="reset-form" style="margin-right: auto;">
-                        <button type="submit" class="button-secondary" onclick="return confirm('Вы уверены, что хотите сбросить локальные настройки этого персонажа в этом чате к его настройкам по умолчанию?');">Сбросить для этого чата</button>
-                    </form>
+                    <button type="submit"
+                            formaction="{{ url_for('reset_chat_settings_route', chat_id=chat_id) }}"
+                            formmethod="post"
+                            class="button-secondary"
+                            onclick="return confirm('Вы уверены, что хотите сбросить локальные настройки этого персонажа в этом чате к его настройкам по умолчанию?');"
+                            style="margin-right: auto;">Сбросить для этого чата</button>
                     <button type="submit" name="save_action" value="save_for_chat_and_default" class="button-secondary">Сохранить для чата и по умолчанию</button>
                     <button type="submit" name="save_action" value="save_for_chat" form="advanced-settings-form">Сохранить для этого чата</button>
                 </div>

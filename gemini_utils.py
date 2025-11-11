@@ -1,13 +1,10 @@
 import os
-import json
 import logging
 from google import genai
 from google.genai import types
 import google.auth
 from google.api_core import exceptions as google_exceptions
-import datetime
-import re
-from colorama import Fore, Style, init
+from colorama import Fore, init
 import base64 
 
 init(autoreset=True)

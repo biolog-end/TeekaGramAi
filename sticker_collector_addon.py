@@ -1,5 +1,3 @@
-# File: sticker_collector.py
-
 import asyncio
 import json
 import logging
@@ -12,15 +10,13 @@ import config as app_config
 
 # --- Настройки ---
 SESSION_NAME = 'kadzu'
-TARGET_CHAT_ID = 546999817 #5495213645
+TARGET_CHAT_ID = 546999817 
 STICKER_JSON_FILE = 'data/stickers.json'
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Глобальные переменные для отслеживания состояния сессии ---
 temp_sticker_data = None
 waiting_for_description_for = None
-# Новый список для хранения ID сообщений, созданных за эту сессию
 session_message_ids = []
 
 def load_sticker_db():
@@ -62,10 +58,8 @@ async def main():
         global temp_sticker_data, waiting_for_description_for, session_message_ids
         
         message = event.message
-        # Запоминаем ID каждого нового входящего сообщения
         session_message_ids.append(message.id)
 
-        # Сценарий 1: Получили стикер
         if message.sticker:
             if waiting_for_description_for:
                 reply = await send_and_track(client, TARGET_CHAT_ID, f"Ожидание описания для `{waiting_for_description_for}` отменено.", reply_to=message.id)
@@ -76,12 +70,10 @@ async def main():
             await send_and_track(client, TARGET_CHAT_ID, "Стикер получен. Теперь отправьте его кодовое имя.", reply_to=message.id)
             return
 
-        # Сценарий 2: Получили текст
         if message.text:
             text_input = message.text.strip()
             text_input_lower = text_input.lower()
             
-            # --- Подсценарий 2.1: Команда 'clear' ---
             if text_input_lower == 'clear':
                 logging.info(f"Получена команда 'clear'. Будет удалено {len(session_message_ids)} сообщений.")
                 if not session_message_ids:
@@ -89,17 +81,13 @@ async def main():
                     return
 
                 try:
-                    # Удаляем только для себя (в "Избранном" это равносильно полному удалению)
                     deleted_count = await client.delete_messages(TARGET_CHAT_ID, session_message_ids)
                     logging.info(f"Удалено {len(deleted_count)} сообщений.")
                     
-                    # После удаления отправляем временное сообщение и тоже его запоминаем
                     confirm_msg = await client.send_message(TARGET_CHAT_ID, f"✅ Очищено {len(deleted_count)} сообщений.")
                     
-                    # Очищаем список и начинаем его заново с ID этого подтверждения
                     session_message_ids = [confirm_msg.id]
                     
-                    # Можно настроить автоудаление подтверждения через пару секунд
                     await asyncio.sleep(5)
                     await client.delete_messages(TARGET_CHAT_ID, [confirm_msg.id])
                     session_message_ids.remove(confirm_msg.id)
@@ -109,7 +97,6 @@ async def main():
                     await send_and_track(client, TARGET_CHAT_ID, f"❌ Ошибка при очистке: {e}", reply_to=message.id)
                 return
 
-            # --- Остальные команды (all, описание, и т.д.) ---
             if text_input_lower == 'all':
                 sticker_db = load_sticker_db()
                 if not sticker_db:
@@ -137,21 +124,18 @@ async def main():
                     await send_and_track(client, TARGET_CHAT_ID, f"🟡 Набор `{codename}` уже существует.", reply_to=message.id)
                     return
                 
-                # Создаем новый набор с пустым списком стикеров
                 sticker_db[codename] = {
                     "enabled": True,
                     "description": "",
-                    "stickers": [] # <-- Ключевое отличие: пустой список
+                    "stickers": []
                 }
                 save_sticker_db(sticker_db)
                 
-                # Сразу переходим в режим ожидания описания для этого нового набора
                 waiting_for_description_for = codename
                 
                 logging.info(f"Пустой набор '{codename}' создан. Ожидание описания...")
                 await send_and_track(client, TARGET_CHAT_ID, f"✅ Пустой набор `{codename}` создан. Теперь отправьте для него текст описания.", reply_to=message.id)
                 return
-            # --- КОНЕЦ НОВОГО БЛОКА ---
 
             description_match = re.match(r"описание\s*\(([\w\d_-]+)\)", text_input_lower)
             if description_match:
@@ -197,10 +181,9 @@ async def main():
                 temp_sticker_data = None
                 return
     
-    # Код запуска
     async with client:
         print("-" * 50)
-        print("Скрипт для сбора стикеров запущен (v3.2 - с командой 'набор').")
+        print("Скрипт для сбора стикеров запущен")
         print("\nКоманды:")
         print("1. [Стикер] -> [имя] - Добавить/создать набор.")
         print("2. 'all' - Показать все наборы.")

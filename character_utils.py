@@ -1,19 +1,15 @@
-# File: character_utils.py
 import os
-import re
 import json
 import logging
 import uuid
 from datetime import datetime
 
-from gemini_utils import generate_chat_reply_original # Импортируем функцию генерации
+from gemini_utils import generate_chat_reply_original 
 
-# --- НАЧАЛО: НОВЫЙ ФАЙЛ И НОВЫЕ ФУНКЦИИ ---
 
 CHARACTERS_FILE = 'data/characters.json'
 CHAT_CHARACTER_MAP_FILE = 'data/chat_character_map.json'
 
-# Дефолтные значения для нового персонажа
 DEFAULT_MEMORY_UPDATE_PROMPT = """
 Твоя задача - обновить память персонажа.
 Проанализируй предоставленную историю переписки. Не упоминай старую память.
@@ -73,9 +69,8 @@ def create_new_character(name="Новый персонаж"):
         "memory_prompt": "# Начало памяти персонажа\n",
         "system_commands_prompt": DEFAULT_SYSTEM_COMMANDS_PROMPT,
         "memory_update_prompt": DEFAULT_MEMORY_UPDATE_PROMPT,
-        # ДОБАВЛЕНО: Поля для персональных настроек
         "enabled_sticker_packs": [], 
-        "advanced_settings": {} # Пустой словарь означает "использовать глобальные дефолты"
+        "advanced_settings": {} 
     }
     
     if save_characters(characters):
@@ -96,10 +91,8 @@ def update_character_memory(character_id: str, chat_name: str, is_group: bool, c
     if not character_data:
         return None, "Персонаж не найден."
 
-    # Собираем промпт для summarizer-модели
     summarizer_system_prompt = character_data.get('memory_update_prompt', DEFAULT_MEMORY_UPDATE_PROMPT)
     
-    # Подставляем нужные значения в шаблон промпта
     final_summarizer_prompt = summarizer_system_prompt.format(
         character_personality=character_data.get('personality_prompt', ''),
         character_past_memory=character_data.get('memory_prompt', ''),
@@ -107,8 +100,6 @@ def update_character_memory(character_id: str, chat_name: str, is_group: bool, c
         chat_type="группа" if is_group else "личный чат"
     )
 
-    # Вызываем Gemini для генерации краткого воспоминания
-    # Используем специальную быструю модель, как ты и просил
     new_memory_entry, error = generate_chat_reply_original(
         model_name="gemini-2.5-flash-lite", 
         system_prompt=final_summarizer_prompt,
@@ -123,16 +114,13 @@ def update_character_memory(character_id: str, chat_name: str, is_group: bool, c
         logging.warning("Модель-суммаризатор вернула пустой ответ. Память не обновлена.")
         return None, "Модель-суммаризатор не сгенерировала текст."
 
-    # Форматируем и добавляем новое воспоминание
     characters = load_characters()
     
     timestamp = datetime.now().strftime("%Y-%m-%d")
     chat_type_str = "в группе" if is_group else "с"
     
-    # Новая строка для файла памяти
     formatted_entry = f"\n- {timestamp}, переписка {chat_type_str} {chat_name}: {new_memory_entry.strip()}"
     
-    # Добавляем в конец промпта памяти
     characters[character_id]['memory_prompt'] += formatted_entry
     
     if save_characters(characters):
