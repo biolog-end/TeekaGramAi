@@ -655,8 +655,7 @@ async def get_media_for_message(chat_id, message_id):
 async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, settings=None, download_media=True):
     """
     Получает историю сообщений, форматирует ее по особому, чтобы нейросеть
-    могла лучше понимать команды и общение, и объединяет последовательные сообщения
-    Кеширует медиа в файл
+    могла лучше понимать команды и общение, и объединяет последовательные сообщения.
     """
     global my_id
     if not client or not client.is_connected() or not await client.is_user_authorized():
@@ -695,6 +694,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
         except Exception as read_err:
             logging.warning(f"Не удалось отметить сообщения как прочитанные: {read_err}")
 
+
         all_reactions_on_messages = {}
         for msg in messages:
             if msg and isinstance(msg.reactions, MessageReactions) and msg.reactions.recent_reactions:
@@ -702,11 +702,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 for recent_reaction in msg.reactions.recent_reactions:
                     reactor_id = None
                     peer = recent_reaction.peer_id
-                    
                     if isinstance(peer, PeerUser):
                         reactor_id = peer.user_id
                     elif isinstance(peer, PeerChannel):
-                        
                         reactor_id = peer.channel_id
                     
                     if reactor_id and hasattr(recent_reaction, 'reaction'):
@@ -714,19 +712,9 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                         if isinstance(recent_reaction.reaction, ReactionEmoji):
                             emoji = recent_reaction.reaction.emoticon
                         if emoji:
-                            reactions_list.append((reactor_id, emoji))
+                            reactions_list.append({'reactor_id': reactor_id, 'emoji': emoji})
                 if reactions_list:
                     all_reactions_on_messages[msg.id] = reactions_list
-
-        pending_reactions_to_attach = {}
-        for msg_id, reactions_list in all_reactions_on_messages.items():
-            for reactor_id, emoji in reactions_list:
-                if reactor_id not in pending_reactions_to_attach:
-                    pending_reactions_to_attach[reactor_id] = []
-                reaction_command = f"react({msg_id})[{emoji}]"
-                if reaction_command not in pending_reactions_to_attach[reactor_id]:
-                    pending_reactions_to_attach[reactor_id].append(reaction_command)
-
 
         raw_intermediate_list = []
         messages.reverse()
@@ -748,10 +736,6 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 if not sender_name: sender_name = getattr(sender, 'username', f"User_{sender.id}") or f"User_{sender.id}"
                 sender_prefix = f"<ник:{sender_name.strip()}> "
             
-            reactions_prefix = ""
-            if msg.sender_id in pending_reactions_to_attach:
-                reactions_prefix = "\n".join(pending_reactions_to_attach[msg.sender_id]) + "\n"
-                del pending_reactions_to_attach[msg.sender_id]
             
             reply_prefix = f"answer({msg.reply_to_msg_id})\n" if msg.reply_to_msg_id else ""
             
@@ -837,14 +821,43 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 codename = STICKER_ID_TO_CODENAME.get(msg.sticker.id, '')
                 content_text = f"sticker({codename})" if codename else f"[Стикер]"
 
-            full_text_block = f"{reactions_prefix}{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
+            full_text_block = f"{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
             if full_text_block:
                 content_parts.insert(0, {"text": full_text_block})
 
             raw_intermediate_list.append({
-                "role": role, "parts": content_parts, "is_media": is_media_message, "_original_msg": msg
+                "role": role, "parts": content_parts, "is_media": is_media_message,
+                "_original_msg": msg, "_sender_id": msg.sender_id, "_msg_id": msg.id,
+                "_reactions_to_prepend": []
             })
-    
+        
+        msg_id_to_index = {item['_msg_id']: i for i, item in enumerate(raw_intermediate_list)}
+        for reacted_on_msg_id, reactions in all_reactions_on_messages.items():
+            if reacted_on_msg_id not in msg_id_to_index:
+                continue
+
+            start_index = msg_id_to_index[reacted_on_msg_id]
+            for reaction in reactions:
+                reactor_id = reaction['reactor_id']
+                reaction_command = f"react({reacted_on_msg_id})[{reaction['emoji']}]"
+                for i in range(start_index + 1, len(raw_intermediate_list)):
+                    if raw_intermediate_list[i]['_sender_id'] == reactor_id:
+                        if reaction_command not in raw_intermediate_list[i]['_reactions_to_prepend']:
+                            raw_intermediate_list[i]['_reactions_to_prepend'].append(reaction_command)
+                        break
+        
+        for item_data in raw_intermediate_list:
+            if item_data['_reactions_to_prepend']:
+                reactions_text = "\n".join(item_data['_reactions_to_prepend'])
+                found_text_part = False
+                for part in item_data['parts']:
+                    if 'text' in part:
+                        part['text'] = f"{reactions_text}\n{part['text']}"
+                        found_text_part = True
+                        break
+                if not found_text_part:
+                    item_data['parts'].insert(0, {'text': reactions_text})
+
         if not raw_intermediate_list:
             return [], None
         for item_data in raw_intermediate_list:
@@ -853,6 +866,7 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
             if final_formatted_messages:
                 last_entry = final_formatted_messages[-1]
                 last_msg_obj, last_is_media = last_entry.get("_original_msg"), last_entry.get("is_media", False)
+                
                 has_reaction_prefix = any('react(' in p.get('text', '') for p in current_parts if 'text' in p)
                 if (last_msg_obj and not current_is_media and not last_is_media and not has_reaction_prefix and
                     current_role == last_entry["role"] and current_msg_obj.sender_id == last_msg_obj.sender_id and
@@ -872,6 +886,10 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
         for entry in final_formatted_messages:
             entry.pop("_original_msg", None)
             entry.pop("is_media", None)
+            if '_sender_id' in entry: del entry['_sender_id']
+            if '_msg_id' in entry: del entry['_msg_id']
+            if '_reactions_to_prepend' in entry: del entry['_reactions_to_prepend']
+
 
         logging.info(f"Успешно отформатировано и сгруппировано {len(final_formatted_messages)} блоков.")
         error_message = None

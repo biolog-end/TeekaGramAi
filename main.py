@@ -505,8 +505,8 @@ def split_message_by_limit(text: str, limit: int) -> list[str]:
 def replace_standalone_sticker_names(text: str) -> str:
     """
     Находит "одинокие" кодовые имена стикеров в тексте и оборачивает их в команду sticker().
-    Оптимизирована для запуска только если в тексте есть потенциальные английские слова,
-    и избегает оборачивания уже корректно отформатированных команд.
+    Эта версия избегает ошибки "look-behind requires fixed-width pattern", разделяя
+    текст на части и обрабатывая только те, что не являются командами sticker().
     """
     if not text or not re.search(r'[a-zA-Z]{3,}', text):
         return text
@@ -515,13 +515,23 @@ def replace_standalone_sticker_names(text: str) -> str:
     if not sticker_codenames:
         return text
 
-    processed_text = text
-    for codename in sticker_codenames:
-        pattern = r'(?<!sticker\s*\(\s*)' + r'\b' + re.escape(codename) + r'\b'
-        replacement = f'sticker({codename})'
-        processed_text = re.sub(pattern, replacement, processed_text, flags=re.IGNORECASE)
+    sticker_command_pattern = re.compile(r'(sticker\s*\([\w\d_-]+\))', re.IGNORECASE)
+    
+    parts = sticker_command_pattern.split(text)
+    
+    result_parts = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:
+            result_parts.append(part)
+        else:
+            processed_part = part
+            for codename in sticker_codenames:
+                simple_pattern = r'\b' + re.escape(codename) + r'\b'
+                replacement = f'sticker({codename})'
+                processed_part = re.sub(simple_pattern, replacement, processed_part, flags=re.IGNORECASE)
+            result_parts.append(processed_part)
 
-    return processed_text
+    return "".join(result_parts)
 
 def send_generated_reply(chat_id: int, message_text: str, settings: dict = None):
     """
@@ -545,7 +555,7 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
     except Exception as e:
         logging.error(f"Ошибка при исправлении имен стикеров: {e}", exc_info=True)
 
-    VALID_REACTIONS = ['👍', '❤️', '🔥', '🎉', '🤩', '😱', '😁', '😢', '🤔', '👎', '💩', '🤔']
+    VALID_REACTIONS = ['👍', '❤️', '🔥', '🎉', '🤩', '😱', '😁', '😢', '🤔', '👎', '💩', '👌', '😈', '😨', '🕊', '🤬', '🤡', '😐', '🤝', '💯', '🥰', '🤮', '🦄', '😎', '💘', '👾']
 
     reaction_tasks = []
     if 'react' in message_text: 
