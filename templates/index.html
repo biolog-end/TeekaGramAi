@@ -30,4 +30,59 @@
         {% endif %}
     {% endif %}
 </div> 
+<div class="content-card">
+    <h2>Глобальные настройки</h2>
+    <form action="{{ url_for('save_global_settings_route') }}" method="post" id="global-settings-form">
+        <h4>Очистка кэша медиафайлов</h4>
+        <p class="settings-description" style="font-size: 0.9em; text-align: left; padding-bottom: 10px; margin-bottom: 15px; border-bottom: none;">
+            Здесь настраивается автоматическое удаление старых медиафайлов (фото, видео, аудио), которые были скачаны для обработки нейросетью.
+        </p>
+
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" name="media_cleanup_enabled" id="media_cleanup_enabled" value="true" {% if global_settings.get('media_cleanup_enabled', True) %}checked{% endif %}>
+                Включить автоматическое удаление медиа из кэша
+            </label>
+        </div>
+
+        <div id="cleanup-days-container">
+            <div class="form-group">
+                <label for="media_cleanup_days">Удалять медиа старше <span id="cleanup-days-value">{{ global_settings.get('media_cleanup_days', 7) }}</span> дней</label>
+                <input type="range" name="media_cleanup_days" id="media_cleanup_days" min="1" max="60" value="{{ global_settings.get('media_cleanup_days', 7) }}" style="width: 100%;">
+            </div>
+        </div>
+
+        <button type="submit">Сохранить глобальные настройки</button>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const cleanupEnabledCheckbox = document.getElementById('media_cleanup_enabled');
+    const daysContainer = document.getElementById('cleanup-days-container');
+    const daysSlider = document.getElementById('media_cleanup_days');
+    const daysValueSpan = document.getElementById('cleanup-days-value');
+
+    function toggleDaysContainer() {
+        if (cleanupEnabledCheckbox.checked) {
+            daysContainer.style.display = 'block';
+            if(daysSlider) daysSlider.disabled = false;
+        } else {
+            daysContainer.style.display = 'none';
+            if(daysSlider) daysSlider.disabled = true;
+        }
+    }
+
+    if(daysSlider && daysValueSpan) {
+        daysSlider.addEventListener('input', function() {
+            daysValueSpan.textContent = this.value;
+        });
+    }
+    
+    if(cleanupEnabledCheckbox) {
+        cleanupEnabledCheckbox.addEventListener('change', toggleDaysContainer);
+        toggleDaysContainer();
+    }
+});
+</script>
 {% endblock %}

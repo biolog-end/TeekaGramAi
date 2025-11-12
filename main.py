@@ -67,6 +67,7 @@ app.secret_key = os.urandom(24)
 ACCOUNTS_JSON_FILE = 'data/accounts.json'
 DEFAULT_SESSION_NAME = 'kadzu'
 CHAT_SETTINGS_FILE = 'data/chat_settings.json'
+GLOBAL_SETTINGS_FILE = 'data/global_settings.json'
 STICKER_JSON_FILE = 'data/stickers.json'
 CHARTS_LIMIT = 120
 CHAT_LIMIT = 10000
@@ -76,6 +77,11 @@ TELEGRAM_MAX_MESSAGE_LENGTH = 4006
 gemini_client_global = None
 telegram_thread = None 
 telegram_ready_event = threading.Event() 
+
+DEFAULT_GLOBAL_SETTINGS = {
+    "media_cleanup_enabled": True,
+    "media_cleanup_days": 7,
+}
 
 DEFAULT_CHAT_SETTINGS = {
     # Общие
@@ -116,6 +122,30 @@ DEFAULT_CHAT_SETTINGS = {
 
 auto_mode_workers = {} 
 auto_mode_lock = threading.Lock() 
+
+def load_global_settings():
+    """Загружает глобальные настройки из JSON файла."""
+    settings = DEFAULT_GLOBAL_SETTINGS.copy()
+    try:
+        if os.path.exists(GLOBAL_SETTINGS_FILE):
+            with open(GLOBAL_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                loaded_settings = json.load(f)
+                settings.update(loaded_settings)
+        return settings
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        logging.warning(f"Не удалось загрузить файл глобальных настроек ({GLOBAL_SETTINGS_FILE}): {e}. Будут использованы настройки по умолчанию.")
+        return settings
+
+def save_global_settings(settings_dict):
+    """Сохраняет словарь глобальных настроек в JSON файл."""
+    try:
+        os.makedirs(os.path.dirname(GLOBAL_SETTINGS_FILE), exist_ok=True)
+        with open(GLOBAL_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings_dict, f, ensure_ascii=False, indent=4)
+        return True
+    except IOError as e:
+        logging.error(f"Ошибка сохранения файла глобальных настроек ({GLOBAL_SETTINGS_FILE}): {e}")
+        return False
 
 def load_accounts():
     """Загружает список доступных аккаунтов из JSON файла."""
@@ -231,6 +261,58 @@ def get_chat_settings(chat_id):
 
     return final_settings
 
+def structure_sticker_data(sticker_db: dict) -> list:
+    """
+    Структурирует плоский список стикеров в иерархию наборов на основе префиксов.
+    """
+    sets = {}
+    individual_stickers = {}
+
+    for codename, data in sticker_db.items():
+        if not data.get("stickers"):
+            sets[codename] = {
+                "description": data.get("description", ""),
+                "stickers": [],
+            }
+        else:
+            individual_stickers[codename] = data
+
+    set_names = sorted(list(sets.keys()), key=len, reverse=True)
+    unassigned_stickers = []
+
+    for codename, data in individual_stickers.items():
+        matched = False
+        for set_name in set_names:
+            if codename.startswith(set_name) and codename != set_name:
+                sets[set_name]["stickers"].append({
+                    "codename": codename,
+                    "description": data.get("description", "")
+                })
+                matched = True
+                break
+        if not matched:
+            unassigned_stickers.append({
+                "codename": codename,
+                "description": data.get("description", "")
+            })
+
+    if unassigned_stickers:
+        sets["остальные"] = {
+            "description": "Стикеры без определенного набора.",
+            "stickers": unassigned_stickers
+        }
+    
+    result_list = []
+    for name, data in sets.items():
+        if not data["stickers"] and name in individual_stickers:
+            continue
+        
+        data["stickers"].sort(key=lambda x: x["codename"])
+        result_list.append({"set_name": name, **data})
+    
+    result_list.sort(key=lambda x: x["set_name"])
+
+    return result_list
 
 def generate_sticker_prompt(enabled_sticker_packs: list) -> str:
     """
@@ -837,7 +919,11 @@ def index():
          flash("Не удалось получить список чатов или он пуст.", "warning")
          logging.warning("Список чатов пуст или не получен.")
 
-    return render_template('index.html', chats=chats_data if chats_data else [], error=error)
+    global_settings = load_global_settings()
+    return render_template('index.html',
+                           chats=chats_data if chats_data else [],
+                           error=error,
+                           global_settings=global_settings)
 
 @app.route('/select_chat', methods=['POST'])
 def select_chat():
@@ -972,11 +1058,9 @@ def chat_page(chat_id):
     )
 
     all_characters = character_utils.load_characters()
+    
     sticker_db = load_sticker_data()
-    sticker_packs_for_template = sorted(
-        [{"codename": name, **data} for name, data in sticker_db.items()],
-        key=lambda x: x['codename']
-    )
+    structured_stickers = structure_sticker_data(sticker_db)
 
     return render_template(
         'chat.html',
@@ -987,7 +1071,7 @@ def chat_page(chat_id):
         generated_reply=None,  
         generation_error=None, 
         sticker_prompt_text_for_js=sticker_prompt_text,
-        sticker_packs=sticker_packs_for_template,
+        structured_sticker_sets=structured_stickers,
         default_model_name=BASE_GEMENI_MODEL,
         current_limit=current_limit,
         auto_mode_status=auto_mode_status,
@@ -1089,6 +1173,31 @@ def stop_auto_mode(chat_id):
              session[f'auto_mode_status_{chat_id}'] = "inactive"
 
     return redirect(url_for('chat_page', chat_id=chat_id))
+
+@app.route('/save_global_settings', methods=['POST'])
+def save_global_settings_route():
+    """Сохраняет глобальные настройки."""
+    logging.info("Запрос POST /save_global_settings")
+
+    try:
+        settings_to_save = {
+            'media_cleanup_enabled': 'media_cleanup_enabled' in request.form,
+            'media_cleanup_days': int(request.form.get('media_cleanup_days', 7)),
+        }
+
+        if save_global_settings(settings_to_save):
+            flash("Глобальные настройки успешно сохранены.", "success")
+            if settings_to_save['media_cleanup_enabled']:
+                days = settings_to_save['media_cleanup_days']
+                logging.info(f"Запуск очистки кэша по запросу после сохранения настроек (файлы старше {days} дней).")
+                cleanup_old_cache_files(directory="media_cache", max_age_days=days)
+        else:
+            flash("Ошибка при сохранении глобальных настроек.", "error")
+
+    except (ValueError, TypeError) as e:
+        flash(f"Ошибка в переданных данных: {e}", "error")
+
+    return redirect(url_for('index'))
 
 @app.route('/save_chat_settings/<sint:chat_id>', methods=['POST'])
 def save_chat_settings_route(chat_id):
@@ -1343,7 +1452,13 @@ if __name__ == '__main__':
 
     initialize_gemini()
 
-    cleanup_old_cache_files(directory="media_cache", max_age_days=7)
+    global_settings = load_global_settings()
+    if global_settings.get('media_cleanup_enabled', True):
+        cleanup_days = global_settings.get('media_cleanup_days', 7)
+        logging.info(f"Запуск очистки кэша при старте (файлы старше {cleanup_days} дней).")
+        cleanup_old_cache_files(directory="media_cache", max_age_days=cleanup_days)
+    else:
+        logging.info("Автоматическая очистка кэша при старте отключена в настройках.")
     
     selected_session = choose_account_from_console(args.account)
     

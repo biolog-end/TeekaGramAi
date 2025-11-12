@@ -154,32 +154,13 @@
 
 <div class="content-card">
     <div class="sticker-controls">
-        <h3>Управление стикерами</h3>
-        <p class="settings-description">
-            Эти настройки будут применены <strong>для активного персонажа</strong>.
+        <div class="sticker-controls-header">
+            <h3>Управление стикерами</h3>
+            <button type="button" id="open-sticker-manager-btn">Открыть менеджер</button>
+        </div>
+        <p class="settings-description" style="margin-top: 1rem;">
+            Настройки стикеров применяются <strong>для активного персонажа</strong>.
         </p>
-        <form action="{{ url_for('update_sticker_status', chat_id=chat_id) }}" method="post">
-            <details class="sticker-dropdown">
-                <summary>Включить/отключить наборы стикеров</summary>
-                <div class="sticker-list">
-                    {% if sticker_packs %}
-                        {% for pack in sticker_packs %}
-                        <label class="sticker-item">
-                            <input type="checkbox" name="sticker_enabled" value="{{ pack.codename }}" 
-                                   {{ 'checked' if active_character_data and pack.codename in active_character_data.enabled_sticker_packs }}>
-                            <span>{{ pack.codename }}</span>
-                        </label>
-                        {% endfor %}
-                    {% else %}
-                        <p>Наборы стикеров не найдены.</p>
-                    {% endif %}
-                </div>
-            </details>
-            <div class="sticker-buttons">
-                <button type="submit">Сохранить статусы</button>
-                <button type="button" id="copy-sticker-prompt-btn" data-sticker-prompt="{{ sticker_prompt_text_for_js }}">Скопировать промпт</button>
-            </div>
-        </form>
     </div>
 </div>
 
@@ -405,6 +386,8 @@
     <a href="{{ url_for('index') }}">← Назад к выбору чата</a> 
 </div>
 
+{% include '_sticker_manager.html' %}
+
 <script>
     function fetchMediaPlaceholders() {
         const placeholders = document.querySelectorAll('.media-placeholder');
@@ -557,11 +540,97 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', (event) => {
+document.addEventListener('DOMContentLoaded', (event) => {
         handleStickerCopy();
         setupLoadingSpinners();
         handleAjaxGeneration();
         fetchMediaPlaceholders();
+        
+        const stickerModal = document.getElementById('sticker-manager-modal');
+        if (!stickerModal) return;
+
+        const openStickerModalBtn = document.getElementById('open-sticker-manager-btn');
+        const closeStickerModalBtn = document.getElementById('close-sticker-manager-btn');
+        const enableAllBtn = document.getElementById('enable-all-stickers-btn');
+        const disableAllBtn = document.getElementById('disable-all-stickers-btn');
+        const allStickerCheckboxes = stickerModal.querySelectorAll('.sticker-checkbox');
+        const stickerSetGroups = stickerModal.querySelectorAll('.sticker-set-group');
+
+        if (openStickerModalBtn) {
+            openStickerModalBtn.addEventListener('click', () => {
+                stickerModal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            });
+        }
+        const closeModal = () => {
+            stickerModal.style.display = 'none';
+            document.body.style.overflow = '';
+        };
+        if (closeStickerModalBtn) {
+            closeStickerModalBtn.addEventListener('click', closeModal);
+            stickerModal.addEventListener('click', (e) => {
+                if (e.target === stickerModal) closeModal();
+            });
+        }
+
+        function updateSingleMasterCheckbox(setElement) {
+            const masterCheckbox = setElement.querySelector('.set-master-checkbox');
+            const stickerCheckboxes = setElement.querySelectorAll('.sticker-checkbox');
+
+            if (!masterCheckbox || stickerCheckboxes.length === 0) return;
+
+            const total = stickerCheckboxes.length;
+            const checkedCount = Array.from(stickerCheckboxes).filter(cb => cb.checked).length;
+
+            if (checkedCount === 0) {
+                masterCheckbox.checked = false;
+                masterCheckbox.indeterminate = false;
+            } else if (checkedCount === total) {
+                masterCheckbox.checked = true;
+                masterCheckbox.indeterminate = false;
+            } else {
+                masterCheckbox.checked = false;
+                masterCheckbox.indeterminate = true;
+            }
+        }
+
+        function updateAllMasterCheckboxes() {
+             stickerSetGroups.forEach(setElement => {
+                updateSingleMasterCheckbox(setElement);
+            });
+        }
+        
+        if (enableAllBtn) {
+            enableAllBtn.addEventListener('click', () => {
+                allStickerCheckboxes.forEach(cb => cb.checked = true);
+                updateAllMasterCheckboxes();
+            });
+        }
+        if (disableAllBtn) {
+            disableAllBtn.addEventListener('click', () => {
+                allStickerCheckboxes.forEach(cb => cb.checked = false);
+                updateAllMasterCheckboxes();
+            });
+        }
+
+        stickerSetGroups.forEach(setElement => {
+            const masterCheckbox = setElement.querySelector('.set-master-checkbox');
+            const stickerCheckboxes = setElement.querySelectorAll('.sticker-checkbox');
+
+            if (masterCheckbox && stickerCheckboxes.length > 0) {
+                masterCheckbox.addEventListener('change', () => {
+                    stickerCheckboxes.forEach(cb => {
+                        cb.checked = masterCheckbox.checked;
+                    });
+                });
+            }
+
+            stickerCheckboxes.forEach(cb => {
+                cb.addEventListener('change', () => updateSingleMasterCheckbox(setElement));
+            });
+        });
+        
+        updateAllMasterCheckboxes();
     });
 
     window.addEventListener('pageshow', function(event) {

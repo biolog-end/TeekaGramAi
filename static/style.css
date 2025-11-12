@@ -805,3 +805,270 @@ small {
     height: 32px;
     animation: spin 1s linear infinite;
 }
+
+.sticker-controls-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.sticker-controls-header h3 {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+#open-sticker-manager-btn {
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    padding: 10px 20px; 
+    font-size: 0.9em;
+}
+#open-sticker-manager-btn:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover);
+}
+
+.sticker-manager-modal {
+    display: none; 
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+}
+
+.sticker-manager-content {
+    background-color: var(--card-bg-color);
+    margin: auto;
+    padding: 25px 30px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-large);
+    width: 90%;
+    max-width: 750px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+}
+
+.sticker-manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 5px;
+}
+
+.sticker-manager-header h3 {
+    margin: 0;
+    color: var(--heading-color);
+}
+
+.close-btn {
+    color: #aaa;
+    background: none;
+    border: none;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 10px;
+    line-height: 1;
+    box-shadow: none;
+}
+
+.close-btn:hover,
+.close-btn:focus {
+    color: var(--button-primary-bg);
+    text-decoration: none;
+    transform: none;
+}
+
+.sticker-manager-body {
+    padding: 15px 5px;
+    margin-bottom: 15px;
+    flex-grow: 1;
+}
+
+.sticker-set-group {
+    background-color: var(--bg-gradient-end);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    margin-bottom: 15px;
+    padding: 10px 15px;
+    /* --- ДОБАВЛЕНО --- */
+    transition: padding 0.2s ease-in-out; 
+}
+.sticker-set-group[open] {
+    padding-bottom: 15px;
+}
+
+.sticker-set-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1.1em;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative; 
+}
+
+.sticker-set-summary::-webkit-details-marker {
+    display: none;
+}
+
+.sticker-set-summary:hover {
+    color: var(--primary-accent-hover);
+}
+
+.set-master-label {
+    flex-grow: 1;
+}
+
+.sticker-set-list {
+    margin-top: 15px;
+    padding-left: 20px;
+    border-left: 3px solid var(--primary-accent-color);
+}
+
+.sticker-item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.sticker-item-row:last-child {
+    border-bottom: none;
+}
+
+.sticker-description {
+    font-style: italic;
+    color: var(--text-color);
+    opacity: 0.7;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 50%;
+    cursor: help;
+}
+
+.sticker-manager-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding-top: 20px;
+    border-top: 2px solid var(--border-color);
+}
+
+.footer-actions-left, .footer-actions-right {
+    display: flex;
+    gap: 15px;
+}
+
+.button-utility {
+    background-color: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    padding: 10px 20px;
+    font-size: 0.9em !important;
+    border: 1px solid var(--border-color);
+}
+
+.button-utility:hover:not(:disabled) {
+    background-color: var(--button-secondary-hover);
+    border-color: var(--primary-accent-color);
+}
+
+.sticker-manager-footer button {
+    font-size: 1em;
+}
+
+.tooltip-icon {
+    position: relative; 
+    display: inline-block;
+    cursor: help;
+    margin-left: 10px;
+    opacity: 0.7;
+}
+
+.tooltip-text {
+    visibility: hidden; 
+    width: 250px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: var(--border-radius-small);
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 1001; 
+    bottom: 125%; 
+    left: 50%;
+    margin-left: -125px; 
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 0.9em;
+    font-weight: 400;
+}
+
+.tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+.tooltip-icon:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+.sticker-set-description {
+    padding: 10px 15px;
+    margin: 10px 0;
+    background-color: var(--card-bg-color);
+    border-radius: var(--border-radius-small);
+    border-left: 4px solid var(--primary-accent-color);
+    font-size: 0.9em;
+    font-style: italic;
+    color: var(--text-color);
+    opacity: 0.9;
+    line-height: 1.6;
+}
+
+.sticker-set-list {
+    margin-top: 10px;
+    padding-left: 20px;
+    border-left: 3px solid var(--primary-accent-color);
+}
+
+.sticker-set-summary::after {
+    content: '▶';
+    font-size: 0.7em;
+    color: var(--primary-accent-color);
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%) rotate(0deg);
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.sticker-set-group[open] > .sticker-set-summary::after {
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.set-master-label {
+    flex-grow: 1;
+    padding-right: 25px;
+}

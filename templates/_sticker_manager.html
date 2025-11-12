@@ -1,0 +1,63 @@
+<div id="sticker-manager-modal" class="sticker-manager-modal">
+    <div class="sticker-manager-content">
+        <div class="sticker-manager-header">
+            <h3>Управление стикерами</h3>
+            <button type="button" id="close-sticker-manager-btn" class="close-btn">&times;</button>
+        </div>
+        <p class="settings-description">
+            Включите наборы или отдельные стикеры, которые сможет использовать <strong>активный персонаж</strong>.
+        </p>
+        <form action="{{ url_for('update_sticker_status', chat_id=chat_id) }}" method="post" id="sticker-form">
+            <div class="sticker-manager-body">
+                {% if structured_sticker_sets %}
+                    {% for sticker_set in structured_sticker_sets %}
+                        <details class="sticker-set-group">
+                            <summary class="sticker-set-summary">
+                                <label class="checkbox-label set-master-label">
+                                    <input type="checkbox" class="set-master-checkbox">
+                                    <span>{{ sticker_set.set_name }}</span>
+                                </label>
+                            </summary>
+
+                            {% if sticker_set.description %}
+                            <div class="sticker-set-description">
+                                {{ sticker_set.description }}
+                            </div>
+                            {% endif %}
+                            
+                            <div class="sticker-set-list">
+                                {% for sticker in sticker_set.stickers %}
+                                    <div class="sticker-item-row">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="sticker_enabled" class="sticker-checkbox" value="{{ sticker.codename }}"
+                                                {{ 'checked' if active_character_data and sticker.codename in active_character_data.enabled_sticker_packs }}>
+                                            <span>{{ sticker.codename.replace(sticker_set.set_name + '_', '') }}</span>
+                                        </label>
+                                        {% if sticker.description %}
+                                        <small class="sticker-description" title="{{ sticker.description }}">{{ sticker.description }}</small>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <small><i>(В этом наборе нет одиночных стикеров, он служит только для группировки)</i></small>
+                                {% endfor %}
+                            </div>
+                        </details>
+                    {% endfor %}
+                {% else %}
+                     <p>Наборы стикеров не найдены.</p>
+                {% endif %}
+            </div>
+            <div class="sticker-manager-footer">
+                <div class="footer-actions-left">
+                    <button type="button" id="enable-all-stickers-btn" class="button-utility">Включить все</button>
+                    <button type="button" id="disable-all-stickers-btn" class="button-utility">Выключить все</button>
+                </div>
+
+                <div class="footer-actions-right">
+                    <button type="button" id="copy-sticker-prompt-btn" data-sticker-prompt="{{ sticker_prompt_text_for_js }}">Скопировать промпт</button>
+                    <button type="submit">Сохранить статусы</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
