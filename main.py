@@ -200,11 +200,7 @@ def choose_account_from_console(account_choice_arg=None):
             else:
                 print(Fore.RED + "Неверный номер. Пожалуйста, попробуйте снова.")
         except ValueError:
-            print(Fore.RED + "Авто-выбор, ты вильзи")
-            selected_session_file = account_list[2][1]
-            selected_account_name = account_list[2][0]
-            print(Fore.GREEN + f"Выбран аккаунт: '{selected_account_name}'. Запуск с сессией '{selected_session_file}'...")
-            return selected_session_file
+            print(Fore.RED + "Неверный ввод. Пожалуйста, введите число.")
         except (KeyboardInterrupt, EOFError):
             print(Fore.YELLOW + "\nВыбор отменен. Завершение работы.")
             exit()
