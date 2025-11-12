@@ -3,7 +3,7 @@ config.py
 generation_log.txt
 
 data/*
-
+media_cache/*
 !data/accountsExample.json
 
 *.session

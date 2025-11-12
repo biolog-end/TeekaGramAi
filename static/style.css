@@ -787,3 +787,21 @@ small {
 .character-actions form:last-child {
     flex-grow: 0; 
 }
+.media-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    background-color: rgba(0,0,0,0.05);
+    border-radius: var(--border-radius-medium);
+    margin-top: 8px;
+}
+
+.placeholder-spinner {
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-left-color: var(--primary-accent-color);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    animation: spin 1s linear infinite;
+}

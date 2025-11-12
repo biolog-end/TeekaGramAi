@@ -3,6 +3,7 @@ import re
 import random
 import string
 import emoji
+import os
 import json  
 from telethon import TelegramClient, errors, functions
 from telethon.tl.functions.account import UpdateStatusRequest
@@ -12,9 +13,9 @@ from telethon.tl.types import (
     MessageMediaVenue,
     MessageService, DocumentAttributeVideo, DocumentAttributeAudio,
     InputDocument, SendMessageChooseStickerAction, ReactionEmoji,
-    MessageReactions, ReactionCustomEmoji, PeerUser
+    MessageReactions, ReactionCustomEmoji, PeerUser, PeerChannel
 )
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 import base64
 
@@ -25,10 +26,58 @@ client = None
 my_id = None
 telegram_loop = None
 
-MESSAGE_MEDIA_CACHE = {}
+MEDIA_CACHE_DIR = "media_cache"
 STICKER_DB = {}
 STICKER_ID_TO_CODENAME = {}
 STICKER_JSON_FILE = 'data/stickers.json'
+
+def get_extension_from_mime(mime_type):
+    """Возвращает расширение файла на основе MIME-типа."""
+    mapping = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+        'video/mp4': '.mp4',
+        'audio/mpeg': '.mp3',
+        'audio/ogg': '.ogg',
+        'application/pdf': '.pdf',
+    }
+    return mapping.get(mime_type)
+
+def cleanup_old_cache_files(directory, max_age_days):
+    """
+    Проверяет указанную директорию и удаляет все файлы,
+    которые не изменялись больше чем max_age_days дней.
+    """
+    logging.info(f"Запуск очистки старых файлов в директории '{directory}' (старше {max_age_days} дней)...")
+    try:
+        if not os.path.isdir(directory):
+            logging.info(f"Директория для очистки '{directory}' не найдена. Пропуск.")
+            return
+
+        now = datetime.now()
+        max_age = timedelta(days=max_age_days)
+        deleted_count = 0
+
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            
+            if os.path.isfile(file_path):
+                try:
+                    file_mod_time_ts = os.path.getmtime(file_path)
+                    file_mod_time = datetime.fromtimestamp(file_mod_time_ts)
+                    
+                    if now - file_mod_time > max_age:
+                        os.remove(file_path)
+                        logging.info(f"Удален старый файл из кэша: {filename}")
+                        deleted_count += 1
+                except Exception as e:
+                    logging.error(f"Не удалось обработать или удалить файл {file_path}: {e}")
+
+        logging.info(f"Очистка завершена. Удалено файлов: {deleted_count}.")
+
+    except Exception as e:
+        logging.error(f"Критическая ошибка во время очистки кэша: {e}", exc_info=True)
 
 async def send_telegram_reaction(chat_id, message_id, emoji):
     """
@@ -267,17 +316,19 @@ def make_human_like_typos(text: str,
 
 
     chars = list(text)
-
-    if lower_chance > 0:
-        for i in range(1, len(chars)):
-            if chars[i-1] == '.' and chars[i].isupper() and random.random() < lower_chance:
-                chars[i] = chars[i].lower()
-
     new_chars = []
     i = 0
     while i < len(chars):
         char = chars[i]
-        processed = False 
+        processed = False
+        
+        if char.isupper() and random.random() < lower_chance:
+            j = len(new_chars) - 1
+            while j >= 0 and new_chars[j].isspace():
+                j -= 1
+            
+            if j >= 0 and new_chars[j] == '.':
+                char = char.lower()
 
         
         if i + 1 < len(chars):
@@ -529,15 +580,90 @@ async def get_chat_info(chat_id):
         error = f"Error getting chat info for {chat_id}: {e}"
     return chat_info, error
 
-async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, settings=None):
+async def get_media_for_message(chat_id, message_id):
     """
-    Получает историю сообщений, форматирует ее и объединяет последовательные сообщения
-    от одного и того же отправителя. КЕШИРУЕТ МЕДИА для быстрой перезагрузки.
-    ИСПРАВЛЕНА ЛОГИКА ОБРАБОТКИ РЕАКЦИЙ.
+    Загружает медиа-контент для ОДНОГО конкретного сообщения.
+    Использует дисковый кэш, сохраняя файлы как изображения/видео, а не JSON.
+    Возвращает список 'parts' в формате base64, как и раньше, для совместимости с Gemini.
     """
-    global my_id, MESSAGE_MEDIA_CACHE
+    if not client or not client.is_connected():
+        return None, "Telegram client is not connected."
+    
+    try:
+        msg = await client.get_messages(chat_id, ids=message_id)
+        if not msg or not msg.media:
+            return None, "Message not found or has no media."
+
+        media_type = None
+        mime_type = None
+        file_ext = None
+        
+        if isinstance(msg.media, MessageMediaPhoto):
+            media_type = 'image'
+            mime_type = 'image/jpeg'
+            file_ext = '.jpg'
+        elif isinstance(msg.media, MessageMediaDocument):
+            doc = msg.media.document
+            mime_type = getattr(doc, 'mime_type', '')
+            file_ext = get_extension_from_mime(mime_type)
+            if file_ext == '.mp4': media_type = 'video'
+            elif file_ext in ['.mp3', '.ogg']: media_type = 'audio'
+            elif file_ext == '.pdf': media_type = 'file'
+
+        if not media_type or not mime_type or not file_ext:
+            return None, "Unsupported media type for download."
+
+        cache_filename = f"{chat_id}_{msg.id}{file_ext}"
+        cache_filepath = os.path.join(MEDIA_CACHE_DIR, cache_filename)
+
+        if os.path.exists(cache_filepath):
+            logging.info(f"Медиа найдено в кэше: {cache_filepath}. Чтение файла...")
+            try:
+                with open(cache_filepath, 'rb') as f:
+                    media_bytes = f.read()
+                
+                base64_data = base64.b64encode(media_bytes).decode('utf-8')
+                part_key = f"{media_type}_base64"
+                return [{"mime_type": mime_type, part_key: base64_data}], None
+
+            except Exception as e:
+                logging.warning(f"Не удалось прочитать файл из кэша {cache_filepath}, будет произведена повторная загрузка: {e}")
+
+        logging.info(f"Медиа не найдено в кэше. Загрузка из Telegram...")
+        media_bytes = await msg.download_media(file=bytes)
+
+        if not media_bytes:
+             return None, "Failed to download media from Telegram."
+
+        try:
+            os.makedirs(MEDIA_CACHE_DIR, exist_ok=True)
+            with open(cache_filepath, 'wb') as f:
+                f.write(media_bytes)
+            logging.info(f"Медиа сохранено в кэш: {cache_filepath}")
+        except IOError as e:
+            logging.error(f"Не удалось сохранить медиа в кэш {cache_filepath}: {e}")
+
+        base64_data = base64.b64encode(media_bytes).decode('utf-8')
+        part_key = f"{media_type}_base64"
+        
+        return [{"mime_type": mime_type, part_key: base64_data}], None
+
+    except Exception as e:
+        logging.error(f"Ошибка при получении медиа для сообщения {message_id} в чате {chat_id}: {e}", exc_info=True)
+        return None, f"An unexpected error occurred: {e}"
+
+async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, settings=None, download_media=True):
+    """
+    Получает историю сообщений, форматирует ее по особому, чтобы нейросеть
+    могла лучше понимать команды и общение, и объединяет последовательные сообщения
+    Кеширует медиа в файл
+    """
+    global my_id
     if not client or not client.is_connected() or not await client.is_user_authorized():
         return [], "Telegram client not connected or authorized."
+
+    final_formatted_messages = []
+    error_message = None
 
     if my_id is None:
         try:
@@ -551,15 +677,13 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
         settings = {}
 
     replace_placeholder_with_empty = settings.get('ignore_all_media', False)
-
-    raw_intermediate_list = []
-    error_message = None
+    loading_error_suffix = " - не удалось загрузить."
     group_delta = timedelta(minutes=group_threshold_minutes)
     split_separator = "\n{split}\n"
     is_group_chat = chat_id < 0
 
     try:
-        logging.info(f"Запрос истории для чата {chat_id}, лимит {limit}...")
+        logging.info(f"Запрос истории для чата {chat_id}, лимит {limit}, режим загрузки: {download_media}")
         messages = await client.get_messages(chat_id, limit=limit)
         logging.info(f"Получено {len(messages)} сообщений.")
 
@@ -573,46 +697,48 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
 
         all_reactions_on_messages = {}
         for msg in messages:
-            
             if msg and isinstance(msg.reactions, MessageReactions) and msg.reactions.recent_reactions:
                 reactions_list = []
                 for recent_reaction in msg.reactions.recent_reactions:
+                    reactor_id = None
+                    peer = recent_reaction.peer_id
                     
-                    if hasattr(recent_reaction, 'peer_id') and hasattr(recent_reaction, 'reaction'):
+                    if isinstance(peer, PeerUser):
+                        reactor_id = peer.user_id
+                    elif isinstance(peer, PeerChannel):
                         
-                        reactor_id = recent_reaction.peer_id.user_id
+                        reactor_id = peer.channel_id
+                    
+                    if reactor_id and hasattr(recent_reaction, 'reaction'):
                         emoji = ''
-                        
                         if isinstance(recent_reaction.reaction, ReactionEmoji):
                             emoji = recent_reaction.reaction.emoticon
-
-                        if reactor_id and emoji:
+                        if emoji:
                             reactions_list.append((reactor_id, emoji))
-
                 if reactions_list:
                     all_reactions_on_messages[msg.id] = reactions_list
 
         pending_reactions_to_attach = {}
+        for msg_id, reactions_list in all_reactions_on_messages.items():
+            for reactor_id, emoji in reactions_list:
+                if reactor_id not in pending_reactions_to_attach:
+                    pending_reactions_to_attach[reactor_id] = []
+                reaction_command = f"react({msg_id})[{emoji}]"
+                if reaction_command not in pending_reactions_to_attach[reactor_id]:
+                    pending_reactions_to_attach[reactor_id].append(reaction_command)
 
+
+        raw_intermediate_list = []
         messages.reverse()
 
         for msg in messages:
             if isinstance(msg, MessageService) or not msg.sender_id:
                 continue
 
-            if msg.id in all_reactions_on_messages:
-                for reactor_id, emoji in all_reactions_on_messages[msg.id]:
-                    if reactor_id not in pending_reactions_to_attach:
-                        pending_reactions_to_attach[reactor_id] = []
-                    reaction_string = f"react({msg.id})[{emoji}]"
-                    if reaction_string not in pending_reactions_to_attach[reactor_id]:
-                         pending_reactions_to_attach[reactor_id].append(reaction_string)
-
             role = "model" if msg.sender_id == my_id else "user"
             timestamp_str = msg.date.strftime("%Y-%m-%d %H:%M:%S")
             id_prefix = f"(ID: {msg.id}) " if role == "user" or is_group_chat else ""
             timestamp_info = f"{id_prefix}\n[{timestamp_str}]"
-
             sender_prefix = ""
             if is_group_chat and role == "user":
                 sender = msg.sender
@@ -621,191 +747,117 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                 if last_name: sender_name = f"{sender_name} {last_name}".strip()
                 if not sender_name: sender_name = getattr(sender, 'username', f"User_{sender.id}") or f"User_{sender.id}"
                 sender_prefix = f"<ник:{sender_name.strip()}> "
-
-            reactions_prefix = ""
             
+            reactions_prefix = ""
             if msg.sender_id in pending_reactions_to_attach:
                 reactions_prefix = "\n".join(pending_reactions_to_attach[msg.sender_id]) + "\n"
                 del pending_reactions_to_attach[msg.sender_id]
-
+            
             reply_prefix = f"answer({msg.reply_to_msg_id})\n" if msg.reply_to_msg_id else ""
-
+            
             is_media_message = False
             content_parts = []
             content_text = ""
 
-            cache_key = (chat_id, msg.id)
-            if msg.media and cache_key in MESSAGE_MEDIA_CACHE:
-                cached_data = MESSAGE_MEDIA_CACHE[cache_key]
-                mime_type = cached_data[0].get('mime_type')
-                can_see = True
-                placeholder = "[Медиа]"
-
-                if mime_type == 'image/jpeg':
-                    can_see = settings.get('can_see_photos', True)
-                    placeholder = "[Изображение]"
-                elif mime_type == 'video/mp4':
-                    can_see = settings.get('can_see_videos', True)
-                    placeholder = "[Видео]"
-                elif mime_type in ['audio/mpeg', 'audio/ogg']:
-                    can_see = settings.get('can_see_audio', True)
-                    placeholder = "[Аудио]"
-                elif mime_type == 'application/pdf':
-                    can_see = settings.get('can_see_files_pdf', True)
-                    placeholder = "[PDF-файл]"
-
-                if can_see:
-                    content_parts.extend(cached_data)
-                    is_media_message = True
-                    logging.debug(f"Использованы кешированные медиа ({mime_type}) для сообщения {msg.id}")
-                else:
-                    content_text = "" if replace_placeholder_with_empty else placeholder
-
-            elif msg.media:
-                is_media_message = True
-                media_processed_to_base64 = False
-                temp_media_parts = []
-
+            if msg.media:
+                media_processed = False
                 if isinstance(msg.media, MessageMediaPhoto):
+                    placeholder = "[Изображение]" + loading_error_suffix
                     if settings.get('can_see_photos', True):
-                        image_bytes = await msg.download_media(file=bytes)
-                        if image_bytes:
-                            temp_media_parts = [{
-                                "image_base64": base64.b64encode(image_bytes).decode('utf-8'),
-                                "mime_type": "image/jpeg"
-                            }]
-                            media_processed_to_base64 = True
+                        is_media_message = True
+                        if download_media:
+                            media_data, _ = await get_media_for_message(chat_id, msg.id)
+                            if media_data: content_parts.extend(media_data)
+                            else: is_media_message = False; content_text = placeholder
+                        else:
+                            content_parts.append({"type": "media_placeholder", "chat_id": chat_id, "message_id": msg.id})
                     else:
-                        content_text = "" if replace_placeholder_with_empty else "[Изображение]"
-                        is_media_message = False
-
+                        content_text = "" if replace_placeholder_with_empty else placeholder
+                    media_processed = True
                 elif isinstance(msg.media, MessageMediaDocument):
-                    doc = msg.media.document
-                    doc_attrs = getattr(doc, 'attributes', [])
-                    doc_mime = getattr(doc, 'mime_type', '')
-
+                    doc = msg.media.document; doc_attrs = getattr(doc, 'attributes', []); doc_mime = getattr(doc, 'mime_type', '')
                     is_video = any(isinstance(attr, DocumentAttributeVideo) for attr in doc_attrs)
                     is_audio = any(isinstance(attr, DocumentAttributeAudio) for attr in doc_attrs)
                     is_pdf = doc_mime == 'application/pdf'
-
                     if is_video:
                         is_round = any(getattr(attr, 'round_message', False) for attr in doc_attrs)
-                        placeholder = "[Видео-кружок]" if is_round else "[Видео]"
+                        placeholder = ("[Видео-кружок]" if is_round else "[Видео]") + loading_error_suffix
                         if settings.get('can_see_videos', True):
-                            if doc_mime == 'video/mp4':
-                                video_bytes = await msg.download_media(file=bytes)
-                                if video_bytes:
-                                    temp_media_parts = [{
-                                        "video_base64": base64.b64encode(video_bytes).decode('utf-8'),
-                                        "mime_type": "video/mp4"
-                                    }]
-                                    media_processed_to_base64 = True
+                            is_media_message = True
+                            if download_media:
+                                media_data, _ = await get_media_for_message(chat_id, msg.id)
+                                if media_data: content_parts.extend(media_data)
+                                else: is_media_message = False; content_text = placeholder
                             else:
-                                content_text = "" if replace_placeholder_with_empty else placeholder
-                                is_media_message = False
-                        else:
-                            content_text = "" if replace_placeholder_with_empty else placeholder
-                            is_media_message = False
-
+                                content_parts.append({"type": "media_placeholder", "chat_id": chat_id, "message_id": msg.id})
+                        else: content_text = "" if replace_placeholder_with_empty else placeholder
+                        media_processed = True
                     elif is_audio:
                         is_voice = any(getattr(attr, 'voice', False) for attr in doc_attrs)
-                        placeholder = "[Голосовое сообщение]" if is_voice else "[Аудиофайл]"
+                        placeholder = ("[Голосовое сообщение]" if is_voice else "[Аудиофайл]") + loading_error_suffix
                         if settings.get('can_see_audio', True):
-                             if doc_mime in ['audio/mpeg', 'audio/ogg']:
-                                audio_bytes = await msg.download_media(file=bytes)
-                                if audio_bytes:
-                                    temp_media_parts = [{
-                                        "audio_base64": base64.b64encode(audio_bytes).decode('utf-8'),
-                                        "mime_type": doc_mime
-                                    }]
-                                    media_processed_to_base64 = True
-                             else:
-                                content_text = "" if replace_placeholder_with_empty else f"{placeholder} (тип {doc_mime})"
-                                is_media_message = False
-                        else:
-                            content_text = "" if replace_placeholder_with_empty else placeholder
-                            is_media_message = False
-
+                            is_media_message = True
+                            if download_media:
+                                media_data, _ = await get_media_for_message(chat_id, msg.id)
+                                if media_data: content_parts.extend(media_data)
+                                else: is_media_message = False; content_text = placeholder
+                            else:
+                                content_parts.append({"type": "media_placeholder", "chat_id": chat_id, "message_id": msg.id})
+                        else: content_text = "" if replace_placeholder_with_empty else placeholder
+                        media_processed = True
                     elif is_pdf:
-                        placeholder = "[PDF-файл]"
+                        placeholder = "[PDF-файл]" + loading_error_suffix
                         if settings.get('can_see_files_pdf', True):
-                            pdf_bytes = await msg.download_media(file=bytes)
-                            if pdf_bytes:
-                                temp_media_parts = [{
-                                    "file_base64": base64.b64encode(pdf_bytes).decode('utf-8'),
-                                    "mime_type": "application/pdf"
-                                }]
-                                media_processed_to_base64 = True
-                        else:
-                            content_text = "" if replace_placeholder_with_empty else placeholder
-                            is_media_message = False
-
-                    else:
-                        content_text = "" if replace_placeholder_with_empty else "[Документ]"
-                        is_media_message = False
-
-                else:
-                    media_type_description = "[Медиа]"
-
-                    if isinstance(msg.media, MessageMediaContact): media_type_description = "[Контакт]"
-                    elif isinstance(msg.media, MessageMediaGeo): media_type_description = "[Геопозиция]"
-                    elif isinstance(msg.media, MessageMediaPoll): media_type_description = "[Опрос]"
-                    elif isinstance(msg.media, MessageMediaVenue): media_type_description = "[Место]"
-                    elif isinstance(msg.media, MessageMediaGame): media_type_description = "[Игра]"
-                    elif isinstance(msg.media, MessageMediaInvoice): media_type_description = "[Счет]"
-                    elif isinstance(msg.media, MessageMediaUnsupported): media_type_description = "[Неподдерживаемое сообщение]"
-                    content_text = "" if replace_placeholder_with_empty else f"{media_type_description}"
-                    is_media_message = False
-
-                if media_processed_to_base64 and temp_media_parts:
-                    content_parts.extend(temp_media_parts)
-                    MESSAGE_MEDIA_CACHE[cache_key] = temp_media_parts
-
+                            is_media_message = True
+                            if download_media:
+                                media_data, _ = await get_media_for_message(chat_id, msg.id)
+                                if media_data: content_parts.extend(media_data)
+                                else: is_media_message = False; content_text = placeholder
+                            else:
+                                content_parts.append({"type": "media_placeholder", "chat_id": chat_id, "message_id": msg.id})
+                        else: content_text = "" if replace_placeholder_with_empty else placeholder
+                        media_processed = True
+                if not media_processed:
+                    placeholder_text = "[Медиа]"
+                    if isinstance(msg.media, MessageMediaContact): placeholder_text = "[Контакт]"
+                    elif isinstance(msg.media, MessageMediaGeo): placeholder_text = "[Геопозиция]"
+                    elif isinstance(msg.media, MessageMediaPoll): placeholder_text = "[Опрос]"
+                    elif isinstance(msg.media, MessageMediaVenue): placeholder_text = "[Место]"
+                    elif isinstance(msg.media, MessageMediaGame): placeholder_text = "[Игра]"
+                    elif isinstance(msg.media, MessageMediaInvoice): placeholder_text = "[Счет]"
+                    elif isinstance(msg.media, MessageMediaUnsupported): placeholder_text = "[Неподдерживаемое сообщение]"
+                    else: placeholder_text = "[Документ]"
+                    content_text = "" if replace_placeholder_with_empty else (placeholder_text + loading_error_suffix)
             if msg.text:
                 if content_text:
                     content_text = f"{msg.text}\n{content_text}"
                 else:
                     content_text = msg.text
-            elif msg.sticker:
+            elif msg.sticker and not content_parts:
                 codename = STICKER_ID_TO_CODENAME.get(msg.sticker.id, '')
                 content_text = f"sticker({codename})" if codename else f"[Стикер]"
 
             full_text_block = f"{reactions_prefix}{reply_prefix}{timestamp_info}\n{sender_prefix}{content_text}".strip()
-
-            content_parts.insert(0, {"text": full_text_block})
+            if full_text_block:
+                content_parts.insert(0, {"text": full_text_block})
 
             raw_intermediate_list.append({
-                "role": role,
-                "parts": content_parts,
-                "is_media": is_media_message,
-                "_original_msg": msg
+                "role": role, "parts": content_parts, "is_media": is_media_message, "_original_msg": msg
             })
     
-        final_formatted_messages = []
         if not raw_intermediate_list:
             return [], None
-
         for item_data in raw_intermediate_list:
-            current_msg_obj = item_data["_original_msg"]
-            current_parts = item_data["parts"]
-            current_role = item_data["role"]
-            current_is_media = item_data["is_media"]
+            current_msg_obj, current_parts, current_role, current_is_media = item_data["_original_msg"], item_data["parts"], item_data["role"], item_data["is_media"]
             can_group = False
-
             if final_formatted_messages:
                 last_entry = final_formatted_messages[-1]
-                last_msg_obj = last_entry.get("_original_msg")
-                last_is_media = last_entry.get("is_media", False)
-                
-                has_reaction_prefix = any('react(' in p.get('text', '') for p in current_parts)
-                
-                if (last_msg_obj and not current_is_media and not last_is_media and
-                    not has_reaction_prefix and
-                    current_role == last_entry["role"] and
-                    current_msg_obj.sender_id == last_msg_obj.sender_id and
+                last_msg_obj, last_is_media = last_entry.get("_original_msg"), last_entry.get("is_media", False)
+                has_reaction_prefix = any('react(' in p.get('text', '') for p in current_parts if 'text' in p)
+                if (last_msg_obj and not current_is_media and not last_is_media and not has_reaction_prefix and
+                    current_role == last_entry["role"] and current_msg_obj.sender_id == last_msg_obj.sender_id and
                     (current_msg_obj.date - last_msg_obj.date) < group_delta):
                     can_group = True
-
             if can_group:
                 text_to_append = "\n".join([p['text'] for p in current_parts if 'text' in p])
                 for part in last_entry["parts"]:
@@ -815,14 +867,8 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
                         break
                 last_entry["_original_msg"] = current_msg_obj
             else:
-                new_entry = {
-                    "role": current_role,
-                    "parts": current_parts,
-                    "is_media": current_is_media,
-                    "_original_msg": current_msg_obj
-                }
-                final_formatted_messages.append(new_entry)
-
+                final_formatted_messages.append({"role": current_role, "parts": current_parts, "is_media": current_is_media, "_original_msg": current_msg_obj})
+        
         for entry in final_formatted_messages:
             entry.pop("_original_msg", None)
             entry.pop("is_media", None)
@@ -831,13 +877,10 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
         error_message = None
 
     except ValueError as e:
-        logging.error(f"Ошибка получения истории чата {chat_id}: Неверный ID или чат не найден. {e}")
         error_message = f"Error: Chat ID {chat_id} not found or invalid."
     except errors.FloodWaitError as e:
-         logging.error(f"Слишком много запросов при получении истории чата {chat_id}. Подождите {e.seconds} секунд.")
          error_message = f"Error: Too many requests to Telegram (history). Wait {e.seconds} sec."
     except errors.AuthKeyError:
-        logging.error(f"Ошибка ключа авторизации при получении истории чата {chat_id}.")
         error_message = "Authorization key error. Please try restarting the application or deleting the session file."
     except Exception as e:
         logging.exception(f"Неизвестная ошибка получения истории чата {chat_id}: {e}")

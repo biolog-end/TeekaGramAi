@@ -2,11 +2,18 @@ import asyncio
 import json
 import logging
 import re
+import os
+from dotenv import load_dotenv
 
 from telethon import TelegramClient, events
 from telethon.tl.types import InputDocument
 
-import config as app_config
+load_dotenv()
+TELAGRAMM_API_ID = os.getenv('TELAGRAMM_API_ID')
+TELAGRAMM_API_HASH = os.getenv('TELAGRAMM_API_HASH')
+
+if not TELAGRAMM_API_ID or not TELAGRAMM_API_HASH:
+    raise ValueError("TELAGRAMM_API_ID и TELAGRAMM_API_HASH должны быть установлены в .env файле")
 
 # --- Настройки ---
 SESSION_NAME = 'kadzu'
@@ -51,7 +58,7 @@ async def send_file_and_track(client, chat_id, *args, **kwargs):
 async def main():
     global temp_sticker_data, waiting_for_description_for, session_message_ids
     
-    client = TelegramClient(SESSION_NAME, app_config.TELAGRAMM_API_ID, app_config.TELAGRAMM_API_HASH)
+    client = TelegramClient(SESSION_NAME, TELAGRAMM_API_ID, TELAGRAMM_API_HASH)
 
     @client.on(events.NewMessage(chats=TARGET_CHAT_ID))
     async def message_handler(event):

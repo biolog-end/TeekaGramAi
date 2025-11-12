@@ -28,9 +28,15 @@
                     {% for part in msg.parts %}
                         {% if part.text %}
                             <pre>{{ part.text }}</pre>
-                        {% endif %}
                         
-                        {% if part.image_base64 %}
+                        {% elif part.type and part.type == 'media_placeholder' %}
+                            <div class="media-placeholder" 
+                                data-chat-id="{{ part.chat_id }}" 
+                                data-message-id="{{ part.message_id }}">
+                                <div class="placeholder-spinner"></div>
+                            </div>
+
+                        {% elif part.image_base64 %}
                             <img src="data:{{ part.mime_type }};base64,{{ part.image_base64 }}"
                                 alt="Изображение из чата"
                                 style="max-width: 100%; border-radius: 12px; margin-top: 8px;">
@@ -57,6 +63,7 @@
                                  </div>
                              </a>
                         {% endif %}
+
                     {% endfor %}
                 </div>
             {% endfor %}
@@ -399,6 +406,46 @@
 </div>
 
 <script>
+    function fetchMediaPlaceholders() {
+        const placeholders = document.querySelectorAll('.media-placeholder');
+        
+        placeholders.forEach(async (placeholder) => {
+            const chatId = placeholder.dataset.chatId;
+            const messageId = placeholder.dataset.messageId;
+            const url = `/media/${chatId}/${messageId}`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Ошибка сети: ${response.statusText}`);
+                }
+                const data = await response.json();
+
+                if (data.status === 'success' && data.parts) {
+                    let htmlContent = '';
+                    data.parts.forEach(part => {
+                        if (part.image_base64) {
+                            htmlContent += `<img src="data:${part.mime_type};base64,${part.image_base64}" alt="Изображение из чата" style="max-width: 100%; border-radius: 12px; margin-top: 8px;">`;
+                        } else if (part.video_base64) {
+                            htmlContent += `<video controls loop autoplay muted style="max-width: 100%; border-radius: 12px; margin-top: 8px;"><source src="data:${part.mime_type};base64,${part.video_base64}" type="${part.mime_type}">Ваш браузер не поддерживает тэг video.</video>`;
+                        } else if (part.audio_base64) {
+                            htmlContent += `<audio controls><source src="data:${part.mime_type};base64,${part.audio_base64}" type="${part.mime_type}">Ваш браузер не поддерживает аудио-элемент.</audio>`;
+                        } else if (part.file_base64 && part.mime_type === 'application/pdf') {
+                            htmlContent += `<a href="data:${part.mime_type};base64,${part.file_base64}" target="_blank" class="pdf-attachment"><span class="pdf-icon">📄</span><div class="pdf-info"><strong>PDF Документ</strong><small>Нажмите, чтобы открыть</small></div></a>`;
+                        }
+                    });
+                    placeholder.innerHTML = htmlContent;
+                    placeholder.classList.remove('media-placeholder');
+                } else {
+                    throw new Error(data.message || 'Некорректный ответ от сервера');
+                }
+            } catch (error) {
+                console.error(`Ошибка загрузки медиа для ${messageId}:`, error);
+                placeholder.innerHTML = `<span style="color: var(--error-text); font-size: 0.9em;">Ошибка загрузки медиа</span>`;
+            }
+        });
+    }
+
     function handleAjaxGeneration() {
         const generateForm = document.getElementById('generate-form-character');
         if (!generateForm) return;
@@ -514,6 +561,7 @@
         handleStickerCopy();
         setupLoadingSpinners();
         handleAjaxGeneration();
+        fetchMediaPlaceholders();
     });
 
     window.addEventListener('pageshow', function(event) {

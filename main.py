@@ -16,11 +16,15 @@ import character_utils
 from google.genai import types
 import argparse 
 
-
 init(autoreset=True)
 load_dotenv()
 
-import config as app_config
+INSTANCE_NUMBER = int(os.getenv('INSTANCE_NUMBER', 1))
+TELAGRAMM_API_ID = os.getenv('TELAGRAMM_API_ID')
+TELAGRAMM_API_HASH = os.getenv('TELAGRAMM_API_HASH')
+
+if not TELAGRAMM_API_ID or not TELAGRAMM_API_HASH:
+    raise ValueError("TELAGRAMM_API_ID и TELAGRAMM_API_HASH должны быть установлены в .env файле")
 
 from telegram_utils import (
     get_chats,
@@ -32,7 +36,9 @@ from telegram_utils import (
     run_in_telegram_loop,
     STICKER_DB,
     send_sticker_by_codename,
-    send_telegram_reaction
+    send_telegram_reaction,
+    get_media_for_message,
+    cleanup_old_cache_files  
 )
 from gemini_utils import (
     init_gemini_client,
@@ -54,9 +60,9 @@ class SignedIntConverter(BaseConverter):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s')
 
 app = Flask(__name__)
-app.config['SESSION_COOKIE_NAME'] = 'telegram_bot_session_1'
+app.config['SESSION_COOKIE_NAME'] = f'telegram_bot_session_{INSTANCE_NUMBER}'
 app.url_map.converters['sint'] = SignedIntConverter
-app.secret_key = "super-secret-key-for-bot-alpha-9a8b7c"#os.urandom(24)
+app.secret_key = os.urandom(24)
 
 ACCOUNTS_JSON_FILE = 'data/accounts.json'
 DEFAULT_SESSION_NAME = 'kadzu'
@@ -294,8 +300,8 @@ def start_telegram_thread(session_name_to_use: str):
     thread = threading.Thread(
         target=asyncio.run, 
         args=(telegram_main_loop( 
-            app_config.TELAGRAMM_API_ID,
-            app_config.TELAGRAMM_API_HASH,
+            TELAGRAMM_API_ID,
+            TELAGRAMM_API_HASH,
             session_name_to_use,  
             telegram_ready_event 
         ),),
@@ -724,16 +730,18 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                     logging.error(f"[{worker_name}] Ошибка получения истории для генерации: {history_error}. Пропуск.")
                     stop_event.wait(15)
                     continue
-                
+
                 if settings_for_generation.get('enable_auto_memory', True):
                     with auto_mode_lock:
                         bot_last_message_anchor = auto_mode_workers.get(chat_id, {}).get("bot_last_message_anchor")
+                    
                     def find_last_bot_message_text(history):
                         for msg in reversed(history):
                             if msg.get("role") == "model":
                                 for part in msg.get("parts", []):
                                     if "text" in part: return part["text"]
                         return None
+
                     if not bot_last_message_anchor:
                         new_anchor_text = find_last_bot_message_text(full_history)
                         if new_anchor_text:
@@ -742,6 +750,7 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
                             logging.info(f"[{worker_name}] Авто-память: Установлен начальный якорь: '{new_anchor_text[:50]}...'")
                     else:
                         anchor_is_visible = any( part.get("text") == bot_last_message_anchor for msg in full_history if msg.get("role") == "model" for part in msg.get("parts", []) if "text" in part )
+                        
                         if not anchor_is_visible:
                             logging.info(f"[{worker_name}] Авто-память: Якорь '{bot_last_message_anchor[:50]}...' больше не виден. Запуск обновления памяти.")
                             _, mem_update_error = character_utils.update_character_memory(
@@ -843,13 +852,11 @@ def select_chat():
         logging.info(f"Выбран чат с ID: {chat_id}")
         session.pop('generated_reply', None)
         session.pop('last_generation_error', None)
-        session.pop('chat_info', None) 
         session.pop(f'auto_mode_status_{chat_id}', None)
         return redirect(url_for('chat_page', chat_id=chat_id))
     except ValueError:
         flash("Некорректный ID чата.", "error")
         return redirect(url_for('index'))
-
 
 @app.route('/generate/<sint:chat_id>', methods=['POST'])
 def generate_reply(chat_id):
@@ -943,16 +950,11 @@ def chat_page(chat_id):
         logging.warning(f"Некорректный лимит '{limit_str}' из URL, используется {current_limit_from_settings}")
         current_limit = current_limit_from_settings
 
-    chat_info_data = session.get('chat_info')
-    info_error = None
-    if not chat_info_data:
-        logging.info(f"Запрос информации для чата {chat_id}")
-        chat_info_data, info_error = run_in_telegram_loop(get_chat_info(chat_id))
-        if info_error:
-            flash(f"Не удалось получить информацию о чате: {info_error}", "warning")
-            logging.warning(f"Ошибка получения инфо о чате {chat_id}: {info_error}")
-        elif chat_info_data:
-             session['chat_info'] = chat_info_data
+    logging.info(f"Запрос информации для чата {chat_id}")
+    chat_info_data, info_error = run_in_telegram_loop(get_chat_info(chat_id))
+    if info_error:
+        flash(f"Не удалось получить информацию о чате: {info_error}", "warning")
+        logging.warning(f"Ошибка получения инфо о чате {chat_id}: {info_error}")
 
     with auto_mode_lock:
         worker_info = auto_mode_workers.get(chat_id)
@@ -964,10 +966,10 @@ def chat_page(chat_id):
                  del auto_mode_workers[chat_id]
     session[f'auto_mode_status_{chat_id}'] = auto_mode_status
 
-    logging.info(f"Запрос истории для чата {chat_id} с лимитом {current_limit}")
-    history_data, history_error = run_in_telegram_loop(get_formatted_history(chat_id, limit=current_limit, settings=settings_to_use))
-    if history_error:
-        logging.error(f"Ошибка получения истории для чата {chat_id}: {history_error}")
+    logging.info(f"Запрос истории для чата {chat_id} с лимитом {current_limit} (быстрый режим)")
+    history_data, history_error = run_in_telegram_loop(
+        get_formatted_history(chat_id, limit=current_limit, settings=settings_to_use, download_media=False)
+    )
 
     all_characters = character_utils.load_characters()
     sticker_db = load_sticker_data()
@@ -994,6 +996,19 @@ def chat_page(chat_id):
         active_character_id=active_character_id,
         active_character_data=active_character_data
     )
+
+@app.route('/media/<sint:chat_id>/<int:message_id>')
+def get_media(chat_id, message_id):
+    """
+    Endpoint для асинхронной загрузки медиа для одного сообщения.
+    """
+    logging.info(f"AJAX-запрос на получение медиа для сообщения {message_id} в чате {chat_id}")
+    media_parts, error = run_in_telegram_loop(get_media_for_message(chat_id, message_id))
+    
+    if error:
+        return jsonify({'status': 'error', 'message': error}), 500
+    
+    return jsonify({'status': 'success', 'parts': media_parts})
 
 @app.route('/update_sticker_status/<sint:chat_id>', methods=['POST'])
 def update_sticker_status(chat_id):
@@ -1324,9 +1339,13 @@ if __name__ == '__main__':
     parser.add_argument('--account', type=int, help='Номер аккаунта для автоматического выбора.')
     args = parser.parse_args()
     
+    flask_port = 5000 + INSTANCE_NUMBER 
+
     initialize_gemini()
+
+    cleanup_old_cache_files(directory="media_cache", max_age_days=7)
     
-    selected_session = choose_account_from_console()
+    selected_session = choose_account_from_console(args.account)
     
     start_telegram_thread(selected_session)
     
@@ -1338,4 +1357,7 @@ if __name__ == '__main__':
     else:
         logging.warning(Fore.YELLOW + "Telegram не подал сигнал готовности за 60 секунд. Возможны проблемы с подключением.")
     
-    app.run(debug=True, host='0.0.0.0', port=5001, use_reloader=False)
+    print(Fore.CYAN + f"=== Запуск инстанса #{INSTANCE_NUMBER} ===")
+    print(Fore.CYAN + f"Веб-интерфейс будет доступен по адресу: http://127.0.0.1:{flask_port}")
+
+    app.run(debug=True, host='0.0.0.0', port=flask_port, use_reloader=False)
