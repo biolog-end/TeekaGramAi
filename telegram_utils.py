@@ -83,9 +83,20 @@ def load_sticker_db():
     """
     Загружает базу данных стикеров из JSON-файла и создает обратный словарь
     для поиска кодового имени по ID стикера.
+    Если файл или директория не существуют, они будут созданы.
     """
     global STICKER_DB, STICKER_ID_TO_CODENAME
     try:
+        if not os.path.exists(STICKER_JSON_FILE):
+            data_dir = os.path.dirname(STICKER_JSON_FILE)
+            if not os.path.exists(data_dir):
+                os.makedirs(data_dir)
+                logging.info(f"Создана директория: {data_dir}")
+            
+            with open(STICKER_JSON_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f)
+            logging.info(f"Создан пустой файл стикеров: {STICKER_JSON_FILE}")
+            
         with open(STICKER_JSON_FILE, 'r', encoding='utf-8') as f:
             STICKER_DB = json.load(f)
         
@@ -96,8 +107,13 @@ def load_sticker_db():
         
         STICKER_ID_TO_CODENAME = temp_mapping
         logging.info(f"База данных стикеров успешно загружена. Найдено {len(STICKER_DB)} наборов.")
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.warning(f"Файл `{STICKER_JSON_FILE}` не найден или содержит ошибку: {e}")
+
+    except json.JSONDecodeError as e:
+        logging.warning(f"Файл `{STICKER_JSON_FILE}` содержит ошибку JSON: {e}. Будет использован пустой словарь.")
+        STICKER_DB = {}
+        STICKER_ID_TO_CODENAME = {}
+    except Exception as e:
+        logging.error(f"Непредвиденная ошибка при загрузке базы стикеров: {e}", exc_info=True)
         STICKER_DB = {}
         STICKER_ID_TO_CODENAME = {}
 

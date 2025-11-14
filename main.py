@@ -1486,11 +1486,9 @@ if __name__ == '__main__':
     
     atexit.register(stop_telegram_thread)
     
-    logging.info("Ожидание инициализации Telegram (до 60 секунд)...")
-    if telegram_ready_event.wait(timeout=60):
-        logging.info(Fore.GREEN + "Сигнал готовности Telegram получен. Сервер Flask запускается.")
-    else:
-        logging.warning(Fore.YELLOW + "Telegram не подал сигнал готовности за 60 секунд. Возможны проблемы с подключением.")
+    logging.info("Ожидание инициализации Telegram...")
+    telegram_ready_event.wait() 
+    logging.info(Fore.GREEN + "Сигнал готовности Telegram получен. Сервер Flask запускается.")
     
     print(Fore.CYAN + f"=== Запуск инстанса #{INSTANCE_NUMBER} ===")
     print(Fore.CYAN + f"Веб-интерфейс будет доступен по адресу: http://127.0.0.1:{flask_port}")
