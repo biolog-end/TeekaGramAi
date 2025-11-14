@@ -38,7 +38,8 @@ from telegram_utils import (
     send_sticker_by_codename,
     send_telegram_reaction,
     get_media_for_message,
-    cleanup_old_cache_files  
+    cleanup_old_cache_files,
+    calculate_telegram_send_delay 
 )
 from gemini_utils import (
     init_gemini_client,
@@ -63,6 +64,11 @@ app = Flask(__name__)
 app.config['SESSION_COOKIE_NAME'] = f'telegram_bot_session_{INSTANCE_NUMBER}'
 app.url_map.converters['sint'] = SignedIntConverter
 app.secret_key = os.urandom(24)
+
+@app.context_processor
+def inject_instance_number():
+    """Передает номер инстанса в контекст всех шаблонов."""
+    return dict(instance_number=INSTANCE_NUMBER)
 
 ACCOUNTS_JSON_FILE = 'data/accounts.json'
 DEFAULT_SESSION_NAME = 'kadzu'
@@ -117,6 +123,8 @@ DEFAULT_CHAT_SETTINGS = {
     "transposition_chance": 0.005,
     "skip_chance": 0.002,
     "lower_chance": 0.05,
+    "word_loss_chance": 0.0,
+    "max_lost_words": 1,
 }
 
 
@@ -643,11 +651,20 @@ def send_generated_reply(chat_id: int, message_text: str, settings: dict = None)
         success = False
         error_message = None
 
+        timeout = 60 
+
         if task["type"] == "text":
             logging.info(f"Отправка текста в чат {chat_id}: \"{task['content'][:50]}...\"")
+            
+            calculated_delay = calculate_telegram_send_delay(task["content"], settings_to_use)
+            timeout = calculated_delay + 20 
+            logging.info(f"Расчетное время операции: {calculated_delay:.2f}s. Установлен таймаут: {timeout:.2f}s.")
+            
             success, error_message = run_in_telegram_loop(
-                send_telegram_message(chat_id, task["content"], settings=settings_to_use)
+                send_telegram_message(chat_id, task["content"], settings=settings_to_use),
+                timeout=timeout
             )
+
         elif task["type"] == "sticker":
             logging.info(f"Отправка стикера '{task['content']}' в чат {chat_id}.")
             success, error_message = run_in_telegram_loop(send_sticker_by_codename(chat_id, task["content"], settings=settings_to_use))
@@ -711,10 +728,9 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
 
     while not stop_event.is_set():
         
-        base_chat_settings = get_chat_settings(chat_id)
-        settings_for_generation = base_chat_settings.copy() 
+        settings_for_generation = get_chat_settings(chat_id)
 
-        character_id = base_chat_settings.get('active_character_id')
+        character_id = settings_for_generation.get('active_character_id')
         if not character_id:
             logging.warning(f"[{worker_name}] В чате не выбран активный персонаж. Авто-режим приостановлен. Пауза 60 сек.")
             stop_event.wait(60)
@@ -725,10 +741,6 @@ def auto_mode_worker(chat_id: int, stop_event: threading.Event):
             logging.error(f"[{worker_name}] Не найдены данные для персонажа {character_id}. Авто-режим приостановлен. Пауза 60 сек.")
             stop_event.wait(60)
             continue
-            
-        if character_data.get('advanced_settings'):
-            logging.debug(f"[{worker_name}] Применяются персональные настройки поверх настроек чата.")
-            settings_for_generation.update(character_data['advanced_settings'])
         
         check_interval = settings_for_generation.get('auto_mode_check_interval', DEFAULT_CHAT_SETTINGS['auto_mode_check_interval'])
 
@@ -1252,6 +1264,8 @@ def save_chat_settings_route(chat_id):
             'transposition_chance': float(request.form.get('transposition_chance')),
             'skip_chance': float(request.form.get('skip_chance')),
             'lower_chance': float(request.form.get('lower_chance')),
+            'word_loss_chance': float(request.form.get('word_loss_chance', 0.0)),
+            'max_lost_words': int(request.form.get('max_lost_words', 1)),
         }
     except (ValueError, TypeError) as e:
         flash(f"Ошибка в числовых данных: {e}", "error")

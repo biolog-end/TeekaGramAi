@@ -5,6 +5,7 @@ generation_log.txt
 data/*
 media_cache/*
 !data/accountsExample.json
+test_typos.py
 
 *.session
 *.session-journal

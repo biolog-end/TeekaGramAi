@@ -79,38 +79,6 @@ def cleanup_old_cache_files(directory, max_age_days):
     except Exception as e:
         logging.error(f"Критическая ошибка во время очистки кэша: {e}", exc_info=True)
 
-async def send_telegram_reaction(chat_id, message_id, emoji):
-    """
-    Отправляет реакцию на конкретное сообщение.
-    Возвращает (bool: success, str: error_message | None).
-    """
-    if not client or not client.is_connected():
-        return False, "Telegram client not connected."
-
-    try:
-        logging.info(f"Попытка поставить реакцию '{emoji}' на сообщение {message_id} в чате {chat_id}.")
-        
-        await client(functions.messages.SendReactionRequest(
-            peer=chat_id,
-            msg_id=message_id,
-            reaction=[ReactionEmoji(emoticon=emoji)]  
-        ))
-
-        logging.info(f"Реакция '{emoji}' успешно поставлена.")
-        return True, None
-    except errors.MessageIdInvalidError:
-        logging.warning(f"Не удалось поставить реакцию: сообщение с ID {message_id} не найдено в чате {chat_id}.")
-        return True, f"Message ID {message_id} not found (skipped)."
-    except errors.ReactionInvalidError:
-        logging.error(f"Не удалось поставить реакцию: эмодзи '{emoji}' не является валидной реакцией в этом чате.")
-        return True, f"Emoji '{emoji}' is not a valid reaction (skipped)."
-    except errors.ChatAdminRequiredError:
-         logging.warning(f"Не удалось поставить реакцию в чате {chat_id}: нет прав администратора для отправки реакций.")
-         return True, "No permission to send reactions in this chat (skipped)."
-    except Exception as e:
-        logging.error(f"Неизвестная ошибка при отправке реакции: {e}", exc_info=True)
-        return False, f"An unexpected error occurred while sending reaction: {e}"
-
 def load_sticker_db():
     """
     Загружает базу данных стикеров из JSON-файла и создает обратный словарь
@@ -318,17 +286,20 @@ def make_human_like_typos(text: str,
     chars = list(text)
     new_chars = []
     i = 0
+    is_after_punctuation = True
     while i < len(chars):
         char = chars[i]
         processed = False
         
-        if char.isupper() and random.random() < lower_chance:
-            j = len(new_chars) - 1
-            while j >= 0 and new_chars[j].isspace():
-                j -= 1
-            
-            if j >= 0 and new_chars[j] == '.':
+        if is_after_punctuation and char.isupper():
+            if random.random() < lower_chance:
                 char = char.lower()
+
+        if char in '.?!':
+            is_after_punctuation = True
+        
+        elif char not in ' \t\n\r':
+            is_after_punctuation = False
 
         
         if i + 1 < len(chars):
@@ -406,13 +377,44 @@ EMOJI_PATTERN = re.compile(
     )
 )
 
+def simulate_word_loss(text: str, chance: float, max_words: int) -> tuple[str, str]:
+    """
+    Симулирует "потерю" случайных слов в тексте.
+
+    Args:
+        text: Исходный текст.
+        chance: Вероятность того, что потеря слов произойдет (0.0 до 1.0).
+        max_words: Максимальное количество слов для удаления.
+
+    Returns:
+        Кортеж из (текст с возможными потерями, исходный полный текст).
+    """
+    if random.random() < chance:
+        words = text.split()
+        if len(words) > 4: 
+            num_to_remove = random.randint(1, min(max_words, len(words) // 3))
+            
+            lost_indices = sorted(random.sample(range(len(words)), num_to_remove), reverse=True)
+            
+            for index in lost_indices:
+                words.pop(index)
+
+            modified_text = " ".join(words)
+            return modified_text, text
+
+    return text, text
+
+
 def final_fine_tune_sms(comment: str,                     
                     substitution_chance=0.005,
                     transposition_chance=0.005,
                     skip_chance=0.002,
-                    lower_chance=0.01) -> str:
+                    lower_chance=0.01,
+                    word_loss_chance=0.0,
+                    max_lost_words=0
+                    ) -> tuple[str, str]:
     if not comment:
-        return "" 
+        return "", ""
 
     cleaned_comment = comment.replace('&quot;', '"')
 
@@ -460,7 +462,11 @@ def final_fine_tune_sms(comment: str,
         if last_significant_char_index == 0 or cleaned_comment[last_significant_char_index - 1] != '.':
             cleaned_comment = cleaned_comment[:last_significant_char_index] + cleaned_comment[last_significant_char_index + 1:]
 
-    return make_human_like_typos(cleaned_comment, substitution_chance, transposition_chance, skip_chance, lower_chance)
+    text_with_typos = make_human_like_typos(cleaned_comment, substitution_chance, transposition_chance, skip_chance, lower_chance)
+    
+    modified_text, original_text_with_typos = simulate_word_loss(text_with_typos, word_loss_chance, max_lost_words)
+
+    return modified_text, original_text_with_typos
 
 async def connect_telegram(api_id, api_hash, session_name='telegram_session'):
     """Подключается к Telegram (выполняется в цикле telegram_loop)."""
@@ -906,6 +912,68 @@ async def get_formatted_history(chat_id, limit=60, group_threshold_minutes=4.5, 
 
     return final_formatted_messages, error_message
 
+async def send_telegram_reaction(chat_id, message_id, emoji):
+    """
+    Отправляет реакцию на конкретное сообщение.
+    Возвращает (bool: success, str: error_message | None).
+    """
+    if not client or not client.is_connected():
+        return False, "Telegram client not connected."
+
+    try:
+        logging.info(f"Попытка поставить реакцию '{emoji}' на сообщение {message_id} в чате {chat_id}.")
+        
+        await client(functions.messages.SendReactionRequest(
+            peer=chat_id,
+            msg_id=message_id,
+            reaction=[ReactionEmoji(emoticon=emoji)]  
+        ))
+
+        logging.info(f"Реакция '{emoji}' успешно поставлена.")
+        return True, None
+    except errors.MessageNotModifiedError:
+        logging.warning(f"Реакция '{emoji}' уже была установлена на сообщение {message_id}. Пропуск.")
+        return True, "Reaction was already set (skipped)."
+    except errors.MessageIdInvalidError:
+        logging.warning(f"Не удалось поставить реакцию: сообщение с ID {message_id} не найдено в чате {chat_id}.")
+        return True, f"Message ID {message_id} not found (skipped)."
+    except errors.ReactionInvalidError:
+        logging.error(f"Не удалось поставить реакцию: эмодзи '{emoji}' не является валидной реакцией в этом чате.")
+        return True, f"Emoji '{emoji}' is not a valid reaction (skipped)."
+    except errors.ChatAdminRequiredError:
+         logging.warning(f"Не удалось поставить реакцию в чате {chat_id}: нет прав администратора для отправки реакций.")
+         return True, "No permission to send reactions in this chat (skipped)."
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при отправке реакции: {e}", exc_info=True)
+        return False, f"An unexpected error occurred while sending reaction: {e}"
+
+
+def calculate_telegram_send_delay(message_text: str, settings: dict) -> float:
+    """
+    Рассчитывает полную задержку для симуляции печати сообщения в Telegram.
+    Эта логика вынесена из send_telegram_message для предрасчета таймаутов.
+    """
+    settings_dict = settings if isinstance(settings, dict) else {}
+    min_delay_ms = settings_dict.get('typing_delay_ms_min', 40.0)
+    max_delay_ms = settings_dict.get('typing_delay_ms_max', 90.0)
+    min_think_s = settings_dict.get('base_thinking_delay_s_min', 1.2)
+    max_think_s = settings_dict.get('base_thinking_delay_s_max', 2.8)
+    max_duration = settings_dict.get('max_typing_duration_s', 25.0)
+    
+    chars_count = len(message_text)
+    typing_delay_per_char_ms = random.uniform(min_delay_ms, max_delay_ms)
+    base_thinking_delay_s = random.uniform(min_think_s, max_think_s)
+    total_typing_duration_s = (chars_count * typing_delay_per_char_ms) / 1000.0
+    
+    if max_duration > 0:
+        total_typing_duration_s = max(1.5, min(total_typing_duration_s, max_duration))
+    else:
+        total_typing_duration_s = 0.0
+        base_thinking_delay_s = 0.0 
+    
+    full_delay_s = base_thinking_delay_s + total_typing_duration_s
+    return full_delay_s
+
 async def send_sticker_by_codename(chat_id, codename, settings=None):
     """
     Отправляет случайный стикер из набора по кодовому имени, симулируя выбор.
@@ -958,6 +1026,39 @@ async def send_sticker_by_codename(chat_id, codename, settings=None):
     except Exception as e:
         logging.error(f"Критическая ошибка при отправке стикера из набора '{codename_lower}': {e}", exc_info=True)
         return False, f"API error while sending sticker: {e}"
+    
+async def edit_message_with_correction_simulation(sent_message, full_corrected_text: str, settings: dict, client):
+    logging.info(f"Сообщение {sent_message.id} требует исправления. Запуск симуляции.")
+    
+    settings_dict = settings if isinstance(settings, dict) else {}
+    min_delay_ms = settings_dict.get('typing_delay_ms_min', 40.0)
+    max_delay_ms = settings_dict.get('typing_delay_ms_max', 90.0)
+    min_think_s = settings_dict.get('base_thinking_delay_s_min', 1.2)
+    max_think_s = settings_dict.get('base_thinking_delay_s_max', 2.8)
+    max_duration = settings_dict.get('max_typing_duration_s', 25.0)
+
+    base_thinking_delay_s = random.uniform(min_think_s, max_think_s)
+    realization_delay = base_thinking_delay_s * 0.9
+    
+    logging.info(f"Пауза 'осознания' ошибки: {realization_delay:.2f} сек.")
+    await asyncio.sleep(realization_delay)
+
+    chars_to_type_count = max(0, len(full_corrected_text) - len(sent_message.text))
+    typing_delay_per_char_ms = random.uniform(min_delay_ms, max_delay_ms)
+    total_typing_duration_s = (chars_to_type_count * typing_delay_per_char_ms) / 1000.0
+
+    if max_duration > 0:
+        total_typing_duration_s = max(0.5, min(total_typing_duration_s, max_duration))
+    else:
+        total_typing_duration_s = 0.0
+            
+    logging.info(f"Симуляция печати исправления на ~{total_typing_duration_s:.2f} сек...")
+    async with client.action(sent_message.peer_id, 'typing'):
+        if total_typing_duration_s > 0.1:
+            await asyncio.sleep(total_typing_duration_s)
+
+    await client.edit_message(sent_message.peer_id, sent_message.id, text=full_corrected_text)
+    logging.info(f"Сообщение {sent_message.id} отредактировано на полную версию.")
 
 async def send_telegram_message(chat_id, message_text, settings=None):
     """
@@ -971,7 +1072,6 @@ async def send_telegram_message(chat_id, message_text, settings=None):
         return False, "Telegram client not connected or authorized."
 
     reply_to_id = None
-
     first_match = re.search(r"answer\s*\((\d+)\)", message_text, re.IGNORECASE)
 
     if first_match:
@@ -988,32 +1088,27 @@ async def send_telegram_message(chat_id, message_text, settings=None):
     if first_match:
         logging.info(f"Текст сообщения после удаления всех тегов answer(): '{message_text[:70]}...'")
 
-
     if not message_text or not message_text.strip():
          logging.warning(f"Попытка отправить пустое сообщение в чат {chat_id} (возможно, после удаления 'answer()'). Отправка отменена.")
          return True, "Message became empty after removing 'answer()' tag, sending cancelled."
     
+    message_to_send_initially = message_text
+    original_message_full = message_text
     try:
-        if settings and isinstance(settings, dict):
-            sub_chance = settings.get('substitution_chance', 0.005)
-            trans_chance = settings.get('transposition_chance', 0.005)
-            skip_chance_val = settings.get('skip_chance', 0.002)
-            lower_chance_val = settings.get('lower_chance', 0.05)
-
-            
-            message_text = final_fine_tune_sms(
-                message_text,
-                substitution_chance=sub_chance,
-                transposition_chance=trans_chance,
-                skip_chance=skip_chance_val,
-                lower_chance=lower_chance_val
-            )
-        else:
-            message_text = final_fine_tune_sms(message_text)
+        settings_dict = settings if isinstance(settings, dict) else {}
+        message_to_send_initially, original_message_full = final_fine_tune_sms(
+            message_text,
+            substitution_chance=settings_dict.get('substitution_chance', 0.005),
+            transposition_chance=settings_dict.get('transposition_chance', 0.005),
+            skip_chance=settings_dict.get('skip_chance', 0.002),
+            lower_chance=settings_dict.get('lower_chance', 0.05),
+            word_loss_chance=settings_dict.get('word_loss_chance', 0.0),
+            max_lost_words=settings_dict.get('max_lost_words', 1)
+        )
     except Exception as e:
         logging.error(f"Ошибка при вызове final_fine_tune_sms: {e}")
     
-    if not message_text or not message_text.strip():
+    if not message_to_send_initially or not message_to_send_initially.strip():
         logging.warning(f"Попытка отправить пустое сообщение в чат {chat_id}(вероятно из-за final_fine_tune_sms). Отправка отменена.")
         return True, "Message empty after final_fine_tune_sms, sending cancelled."
 
@@ -1021,51 +1116,31 @@ async def send_telegram_message(chat_id, message_text, settings=None):
     error = None
 
     try:
-        if settings and isinstance(settings, dict):
-            min_delay_ms = settings.get('typing_delay_ms_min', 40.0)
-            max_delay_ms = settings.get('typing_delay_ms_max', 90.0)
-            min_think_s = settings.get('base_thinking_delay_s_min', 1.2)
-            max_think_s = settings.get('base_thinking_delay_s_max', 2.8)
-            max_duration = settings.get('max_typing_duration_s', 25.0)
-        else:
-            min_delay_ms, max_delay_ms = 40.0, 90.0
-            min_think_s, max_think_s = 1.2, 2.8
-            max_duration = 25.0
+        settings_dict = settings if isinstance(settings, dict) else {}
 
-        chars_count = len(message_text)
-        typing_delay_per_char_ms = random.uniform(min_delay_ms, max_delay_ms)
-        base_thinking_delay_s = random.uniform(min_think_s, max_think_s)
-        total_typing_duration_s = (chars_count * typing_delay_per_char_ms) / 1000.0
-        
-        if max_duration > 0:
-            total_typing_duration_s = max(1.5, min(total_typing_duration_s, max_duration))
-        else:
-            total_typing_duration_s = 0.0
-            base_thinking_delay_s = 0.0 
-        
-        full_delay_s = base_thinking_delay_s + total_typing_duration_s
+        full_delay_s = calculate_telegram_send_delay(message_to_send_initially, settings_dict)
         
         logging.info(f"Симуляция печати в чате {chat_id} на ~{full_delay_s:.2f} сек...")
-
         async with client.action(chat_id, 'typing'):
             await asyncio.sleep(full_delay_s)
 
-
         logging.info(f"Отправка сообщения в чат {chat_id} (ответ на {reply_to_id if reply_to_id else 'нет'})...")
-        await client.send_message(chat_id, message_text, reply_to=reply_to_id)
+        sent_message = await client.send_message(chat_id, message_to_send_initially, reply_to=reply_to_id)
         logging.info(f"Сообщение успешно отправлено в чат {chat_id}.")
+        
+        if message_to_send_initially != original_message_full and sent_message:
+            await edit_message_with_correction_simulation(sent_message, original_message_full, settings_dict, client)
+            
         success = True
 
     except errors.MsgIdInvalidError as e:
-        
         if reply_to_id:
             logging.warning(f"Не удалось ответить на сообщение ID {reply_to_id} в чате {chat_id}: неверный ID сообщения ({e}). Попытка отправить без ответа...")
             error = f"Invalid reply message ID {reply_to_id}. Sending without reply."
             reply_to_id = None
             try:
-                
-                logging.info(f"Повторная отправка в чат {chat_id} (уже без ответа). Текст: '{message_text[:50].replace(chr(10), ' ')}...'")
-                await client.send_message(chat_id, message_text)
+                logging.info(f"Повторная отправка в чат {chat_id} (уже без ответа). Текст: '{original_message_full[:50].replace(chr(10), ' ')}...'")
+                await client.send_message(chat_id, original_message_full)
                 logging.info(f"Сообщение успешно отправлено в чат {chat_id} (без ответа после ошибки MsgIdInvalidError).")
                 success = True
                 error = None
@@ -1135,7 +1210,7 @@ async def telegram_main_loop(api_id, api_hash, session_name, ready_event):
 
     logging.info("Поток Telethon завершает работу.")
 
-def run_in_telegram_loop(coro):
+def run_in_telegram_loop(coro, timeout=60):
     """
     Выполняет корутину в цикле событий потока Telethon и возвращает результат.
     Блокирует вызывающий поток Flask до получения результата.
@@ -1162,10 +1237,10 @@ def run_in_telegram_loop(coro):
 
     future = asyncio.run_coroutine_threadsafe(coro, telegram_loop)
     try:
-        result = future.result(timeout=60)
+        result = future.result(timeout=timeout)
         return result
     except asyncio.TimeoutError:
-         logging.error(f"Операция '{coro_name}' в потоке Telethon заняла слишком много времени (>60s).")
+         logging.error(f"Операция '{coro_name}' в потоке Telethon заняла слишком много времени (>{timeout}s).")
          telegram_loop.call_soon_threadsafe(future.cancel)
          error_msg = f"Telegram operation '{coro_name}' timed out."
          return default_error_results.get(coro_name, (None, error_msg))
