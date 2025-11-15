@@ -320,27 +320,45 @@ def structure_sticker_data(sticker_db: dict) -> list:
 
 def generate_sticker_prompt(enabled_sticker_packs: list) -> str:
     """
-    Создает строку-инструкцию для Gemini на основе ВЫБРАННЫХ стикеров.
+    Создает подробную, структурированную строку-инструкцию для Gemini
+    на основе ВЫБРАННЫХ стикеров, включая названия и описания наборов.
     """
     if not STICKER_DB or not enabled_sticker_packs:
         return ""
 
-    available_stickers_lines = []
-    for codename in sorted(enabled_sticker_packs):
-        data = STICKER_DB.get(codename)
-        if data:
-            line = f"- {codename}"
-            if data.get("description"):
-                line += f": {data['description']}"
-            available_stickers_lines.append(line)
+    structured_sets = structure_sticker_data(STICKER_DB)
+    enabled_set = set(enabled_sticker_packs)
     
-    if not available_stickers_lines:
+    prompt_lines = []
+
+    for sticker_set in structured_sets:
+            
+        enabled_stickers_in_set = [
+            sticker for sticker in sticker_set.get('stickers', []) 
+            if sticker['codename'] in enabled_set
+        ]
+
+        if enabled_stickers_in_set:
+            if prompt_lines:
+                prompt_lines.append("") 
+
+            prompt_lines.append(f"Набор: {sticker_set['set_name']}")
+            if sticker_set.get('description'):
+                prompt_lines.append(f"Описание: {sticker_set['description']}")
+            
+            for sticker in enabled_stickers_in_set:
+                line = f"- {sticker['codename']}"
+                if sticker.get('description'):
+                    line += f": {sticker['description']}"
+                prompt_lines.append(line)
+    
+    if not prompt_lines:
         return "" 
 
     full_prompt = (
         "Чтобы отправить стикер, используй команду sticker(кодовое_имя_из_списка_ниже).\n\n"
         "Доступные стикеры:\n"
-        f"{'\n'.join(available_stickers_lines)}"
+        f"{'\n'.join(prompt_lines)}"
     )
     return full_prompt
 

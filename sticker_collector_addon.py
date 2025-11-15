@@ -70,6 +70,48 @@ async def send_file_and_track(client, chat_id, *args, **kwargs):
         session_message_ids.append(sent_message.id)
     return sent_message
 
+def sort_and_structure_stickers(sticker_db: dict) -> dict:
+    """
+    Сортирует базу данных стикеров в правильном порядке и возвращает отсортированный словарь.
+    Порядок:
+    1. Сначала идут "наборы" (записи без ключа "stickers" или с пустым списком), отсортированные по алфавиту.
+    2. Сразу за каждым набором следуют все стикеры, принадлежащие ему (по префиксу "имянабора_"), отсортированные по алфавиту.
+    3. В конце списка идут все остальные стикеры ("сироты"), не принадлежащие ни одному явному набору, также отсортированные по алфавиту.
+    """
+    
+    set_definitions = {}
+    individual_stickers = {}
+    for codename, data in sticker_db.items():
+        
+        if not data.get("stickers"):
+            set_definitions[codename] = data
+        else:
+            individual_stickers[codename] = data
+    
+    sorted_set_names = sorted(set_definitions.keys())
+    
+    sorted_db = {}
+    processed_stickers = set()
+
+    for set_name in sorted_set_names:
+        
+        sorted_db[set_name] = set_definitions[set_name]
+        
+        stickers_in_this_set = []
+        for sticker_codename in individual_stickers.keys():
+            if sticker_codename.startswith(set_name + '_'):
+                stickers_in_this_set.append(sticker_codename)
+        
+        for sticker_codename in sorted(stickers_in_this_set):
+            sorted_db[sticker_codename] = individual_stickers[sticker_codename]
+            processed_stickers.add(sticker_codename) 
+
+    orphan_codenames = set(individual_stickers.keys()) - processed_stickers
+
+    for codename in sorted(list(orphan_codenames)):
+        sorted_db[codename] = individual_stickers[codename]
+        
+    return sorted_db
 
 async def main():
     global temp_sticker_data, waiting_for_description_for, session_message_ids
@@ -137,6 +179,9 @@ async def main():
 
                 if text_input_lower == 'all':
                     sticker_db = load_sticker_db()
+                    sticker_db = sort_and_structure_stickers(sticker_db)
+                    save_sticker_db(sticker_db)
+                      
                     if not sticker_db:
                         await send_and_track(client, my_chat_id, "База стикеров пока пуста.", reply_to=message.id)
                         return
