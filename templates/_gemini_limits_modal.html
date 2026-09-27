@@ -1,0 +1,29 @@
+<div class="modal" id="gemini-limits-modal">
+    <div class="modal-box wide">
+        <div class="modal-head">
+            <h2>Лимиты Gemini</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="gemini-limits-modal" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="field-hint">Общий учёт всех проектов и инстансов, использующих библиотеку gemini_budget с одним и тем же ключом. Лимиты по умолчанию — из вашей таблицы AI Studio от 18.09.2026. Вызовы программ без этой библиотеки требуют ручной поправки. Суточный сброс — полночь по тихоокеанскому времени; минута — скользящие 60 секунд.</div>
+            <div class="field-hint">RPM — успешные ответы в минуту, TPM — их входные токены в минуту, RPD — успешные ответы в день. Ошибки и пустые ответы не увеличивают счётчики. Запросы в работе временно резервируют остаток; при ошибке резерв освобождается. Изменить можно расход и сами лимиты; нулевой лимит выключает модель на этом ключе.</div>
+            <div class="btn-row">
+                <label for="gemini-limits-key">Ключ</label>
+                <select id="gemini-limits-key"></select>
+                <button type="button" class="btn btn-sm" id="gemini-limits-refresh">Обновить</button>
+            </div>
+            <div id="gemini-limits-reset" class="field-hint"></div>
+            <div class="quota-table-wrap">
+                <table class="usage-table quota-table">
+                    <thead><tr><th>Модель</th><th>RPM</th><th>TPM</th><th>RPD</th><th></th></tr></thead>
+                    <tbody id="gemini-limits-rows"></tbody>
+                </table>
+            </div>
+            <div class="field-hint">«Изменить» открывает правку одной строки. Сохранение сбрасывает паузу после ошибки Google для этой модели и ключа. Текущие запросы других проектов остаются учтены. Правка не меняет реальную квоту Google.</div>
+        </div>
+        <div class="modal-foot">
+            <span class="field-hint" id="gemini-limits-note" style="margin-right:auto" aria-live="polite"></span>
+            <button type="button" class="btn" data-close-modal="gemini-limits-modal">Закрыть</button>
+        </div>
+    </div>
+</div>

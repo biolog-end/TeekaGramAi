@@ -1,10 +1,16 @@
 config.py
 
 generation_log.txt
+zmain_back.py
 
 data/*
 media_cache/*
+logs/
 !data/accountsExample.json
+
+# Метка "зависимости уже поставлены", её ставит start.bat
+.deps_ok
+.shortcut_ok
 test_typos.py
 
 *.session

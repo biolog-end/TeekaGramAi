@@ -1,0 +1,446 @@
+{# Продвинутые настройки чата. Значения приходят из get_chat_settings —
+   то есть уже с учётом каскада дефолты → персонаж → этот чат. #}
+<div class="modal" id="settings-modal">
+    <div class="modal-box wide">
+        <div class="modal-head">
+            <h2>Настройки чата</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="settings-modal" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="modal-body">
+            <div class="tabs" role="tablist">
+                <button type="button" class="tab active" data-tab="tab-gen">Генерация</button>
+                <button type="button" class="tab" data-tab="tab-auto">Авто-режим</button>
+                <button type="button" class="tab" data-tab="tab-human">Поведение</button>
+                <button type="button" class="tab" data-tab="tab-media">Медиа</button>
+            </div>
+
+            <form id="settings-form">
+                <!-- ---------- Генерация ---------- -->
+                <div class="tab-panel active" id="tab-gen">
+                    {# Модель выбирается на панели чата; здесь она только едет вместе с формой,
+                       чтобы сохранение настроек её не стёрло. #}
+                    <input type="hidden" name="model_name_advanced" id="model_name_advanced"
+                           value="{{ chat_settings.get('model_name', '') }}">
+
+                    <div class="field">
+                        <label for="num_messages_to_fetch">Сколько сообщений истории отправлять модели</label>
+                        <input type="number" name="num_messages_to_fetch" id="num_messages_to_fetch"
+                               min="1" max="500" value="{{ chat_settings.get('num_messages_to_fetch', 65) }}">
+                    </div>
+
+                    <div class="field">
+                        <label for="temperature">Температура модели</label>
+                        <input type="number" name="temperature" id="temperature" min="0" max="2" step="any"
+                               placeholder="По умолчанию у модели"
+                               value="{{ chat_settings.get('temperature') if chat_settings.get('temperature') is not none else '' }}">
+                        <div class="field-hint">От 0 до 2: выше — разнообразнее формулировки. Пусто — значение модели.
+                            Gemini принимает настройку; у GPT-4.1/4o она тоже работает. Для GPT-5.1/5.2/5.4
+                            выключите thinking. Для остальных GPT поддержка не подтверждена, параметр пропускается.
+                            Настройка применяется и к цепочке фоллбэков, где поддерживается.</div>
+                    </div>
+
+                    <label class="switch">
+                        <input type="checkbox" name="enable_thinking"
+                               {{ 'checked' if chat_settings.get('enable_thinking') }}>
+                        <span class="track"></span>
+                        <span>Режим размышления (thinking) — где поддерживается</span>
+                    </label>
+                    <label class="switch">
+                        <input type="checkbox" name="reply_include_quote" {{ 'checked' if chat_settings.get('reply_include_quote') }}>
+                        <span class="track"></span><span>Добавлять начало цитируемого сообщения</span>
+                    </label>
+                    <label class="switch">
+                        <input type="checkbox" name="reply_include_name" {{ 'checked' if chat_settings.get('reply_include_name') }}>
+                        <span class="track"></span><span>Добавлять имя того, кому отвечают</span>
+                    </label>
+                    <div class="field-hint" style="margin:0 0 10px 42px;">
+                        Например: <code>answer[Я же сказал…]&lt;Андрей&gt;(123)</code>.
+                        Для сообщений персонажа — его имя и <code>(ты)</code>.
+                        Оба дополнения необязательны и увеличивают расход токенов.
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" name="reply_load_outside_context" {{ 'checked' if chat_settings.get('reply_load_outside_context') }}>
+                        <span class="track"></span><span>Подгружать сообщения вне истории, на которые отвечают</span>
+                    </label>
+                    <div class="field-hint" style="margin:0 0 10px 42px;">
+                        Например, исходное сообщение месячной давности. Оно добавляется в контекст
+                        с датой и ID. Это увеличивает расход токенов.
+                    </div>
+                    <div class="field" style="margin:4px 0 10px 42px; max-width:320px;">
+                        <label for="reply_context_depth">Глубина цепочки ответов</label>
+                        <input type="number" name="reply_context_depth" id="reply_context_depth"
+                               min="1" max="3" step="1"
+                               value="{{ chat_settings.get('reply_context_depth', 3)|int }}">
+                        <div class="field-hint">От 1 до 3 сообщений вверх по цепочке ответов.</div>
+                    </div>
+                    <div class="field" style="margin:4px 0 10px 42px; max-width:320px;">
+                        <label for="reasoning_effort">Глубина рассуждений OpenAI (reasoning effort)</label>
+                        <select name="reasoning_effort" id="reasoning_effort">
+                            {% for value, label in [('low', 'low — быстро, мало токенов'), ('medium', 'medium'), ('high', 'high — максимум')] %}
+                                <option value="{{ value }}" {{ 'selected' if (chat_settings.get('reasoning_effort') or 'high') == value }}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="field-hint">Действует при включённом thinking для o-серии и gpt-5.x. Рассуждения — это токены вывода, они тоже идут в дневной лимит.</div>
+                    </div>
+
+                    <label class="switch">
+                        <input type="checkbox" name="allow_paid_overage"
+                               {{ 'checked' if chat_settings.get('allow_paid_overage') }}>
+                        <span class="track"></span>
+                        <span>Уходить дальше бесплатных лимитов OpenAI</span>
+                    </label>
+                    <div class="field-hint" style="margin:-4px 0 10px 42px;">
+                        Выключено — генерация останавливается, когда бесплатные токены дня почти
+                        выбраны (с запасом 8 тыс.). Включено — запросы идут дальше и оплачиваются
+                        с баланса по обычным ценам.
+                    </div>
+
+                    <label class="switch">
+                        <input type="checkbox" name="enable_google_search"
+                               {{ 'checked' if chat_settings.get('enable_google_search') }}>
+                        <span class="track"></span>
+                        <span>Поиск в Google (только модели Gemini)</span>
+                    </label>
+                    <div class="field-hint">У Gemini 3.x поиск через API требует платного проекта;
+                        на бесплатном тарифе включение поиска может давать ошибку 429.</div>
+
+                    <label class="switch">
+                        <input type="checkbox" name="enable_auto_memory"
+                               {{ 'checked' if chat_settings.get('enable_auto_memory', True) }}>
+                        <span class="track"></span>
+                        <span>Автоматически пополнять память персонажа</span>
+                    </label>
+
+                    <label class="switch">
+                        <input type="checkbox" name="stickers_as_images"
+                               {{ 'checked' if chat_settings.get('stickers_as_images') }}>
+                        <span class="track"></span>
+                        <span>Показывать модели стикеры картинками</span>
+                    </label>
+                    <div class="field-hint" style="margin:-4px 0 10px 42px;">
+                        Модель видит превью стикера и его id — может ответить <code>sticker(id=NNN)</code>.
+                        Дороже (картинка в промпте на каждый стикер), но контекст точнее.
+                        Стикеры из карантина она получает только текстом. Окно чата показывает то же, что и модель.
+                    </div>
+                </div>
+
+                <!-- ---------- Авто-режим ---------- -->
+                <div class="tab-panel" id="tab-auto">
+                    {% if chat_id < 0 %}
+                    <div class="section-title">Режим управления аккаунтом</div>
+                    <label class="switch">
+                        <input type="checkbox" name="cluster_chatting_enabled" id="cluster_chatting_enabled"
+                               {% if chat_settings.get('cluster_chatting_enabled', false) %}checked{% endif %}>
+                        <span class="track"></span><span>Кластерный чатинг для этой группы</span>
+                    </label>
+                    <div class="field-hint">Когда авто-режим включён в группе, аккаунт следит за личными сообщениями участников группы. Один личный разговор активен, остальные ждут очереди. Режим эксклюзивен для этого аккаунта.</div>
+                    <label class="switch">
+                        <input type="checkbox" name="cluster_no_commitment" id="cluster_no_commitment"
+                               {% if chat_settings.get('cluster_no_commitment', false) %}checked{% endif %}>
+                        <span class="track"></span><span>Без обязательств</span>
+                    </label>
+                    <div class="field-hint">Личные саб-сессии закрываются без обращения к модели памяти и без записи в память персонажа.</div>
+                    <div class="field">
+                        <label for="cluster_dm_idle_minutes">Вернуться в группу после молчания в личке, минут</label>
+                        <input type="number" step="0.1" min="0.1" name="cluster_dm_idle_minutes" id="cluster_dm_idle_minutes"
+                               value="{{ chat_settings.get('cluster_dm_idle_minutes', 4) }}">
+                    </div>
+                    {% set dm_overrides = chat_settings.get('cluster_dm_settings_overrides', {}) %}
+                    <input type="hidden" name="cluster_dm_overrides_present" value="1">
+                    <details class="field">
+                        <summary><strong>Отдельные настройки личных ответвлений</strong></summary>
+                        <div class="field-hint">Пустое поле наследует актуальную настройку основной группы. Заполните только то, что должно отличаться в личках.</div>
+                        <div class="section-title">Проверки и печать</div>
+                        <div class="grid-2">
+                            <div class="field"><label>Интервал проверки, сек</label>
+                                <input type="number" step="0.1" min="0.5" name="cluster_dm_auto_mode_check_interval"
+                                       value="{{ dm_overrides.get('auto_mode_check_interval', '') }}" placeholder="Основное: {{ chat_settings.get('auto_mode_check_interval', 3.5) }}"></div>
+                            <div class="field"><label>Пауза перед ответом, сек</label>
+                                <input type="number" step="0.1" min="0" name="cluster_dm_auto_mode_initial_wait"
+                                       value="{{ dm_overrides.get('auto_mode_initial_wait', '') }}" placeholder="Основное: {{ chat_settings.get('auto_mode_initial_wait', 6) }}"></div>
+                            <div class="field"><label>Мс на символ, от</label>
+                                <input type="number" step="1" min="0" name="cluster_dm_typing_delay_ms_min"
+                                       value="{{ dm_overrides.get('typing_delay_ms_min', '') }}" placeholder="Основное: {{ chat_settings.get('typing_delay_ms_min', 40) }}"></div>
+                            <div class="field"><label>Мс на символ, до</label>
+                                <input type="number" step="1" min="0" name="cluster_dm_typing_delay_ms_max"
+                                       value="{{ dm_overrides.get('typing_delay_ms_max', '') }}" placeholder="Основное: {{ chat_settings.get('typing_delay_ms_max', 90) }}"></div>
+                            <div class="field"><label>Максимум печати, сек</label>
+                                <input type="number" step="0.1" min="0" name="cluster_dm_max_typing_duration_s"
+                                       value="{{ dm_overrides.get('max_typing_duration_s', '') }}" placeholder="Основное: {{ chat_settings.get('max_typing_duration_s', 25) }}"></div>
+                            <div class="field"><label>Пауза между частями, от</label>
+                                <input type="number" step="0.1" min="0" name="cluster_dm_base_thinking_delay_s_min"
+                                       value="{{ dm_overrides.get('base_thinking_delay_s_min', '') }}" placeholder="Основное: {{ chat_settings.get('base_thinking_delay_s_min', 1.2) }}"></div>
+                            <div class="field"><label>Пауза между частями, до</label>
+                                <input type="number" step="0.1" min="0" name="cluster_dm_base_thinking_delay_s_max"
+                                       value="{{ dm_overrides.get('base_thinking_delay_s_max', '') }}" placeholder="Основное: {{ chat_settings.get('base_thinking_delay_s_max', 2.8) }}"></div>
+                        </div>
+                        <div class="section-title">Ошибки в личках</div>
+                        <div class="grid-2">
+                            <div class="field"><label>Замена символа</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_substitution_chance" value="{{ dm_overrides.get('substitution_chance', '') }}" placeholder="Основное: {{ chat_settings.get('substitution_chance', 0.005) }}"></div>
+                            <div class="field"><label>Перестановка</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_transposition_chance" value="{{ dm_overrides.get('transposition_chance', '') }}" placeholder="Основное: {{ chat_settings.get('transposition_chance', 0.005) }}"></div>
+                            <div class="field"><label>Пропуск символа</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_skip_chance" value="{{ dm_overrides.get('skip_chance', '') }}" placeholder="Основное: {{ chat_settings.get('skip_chance', 0.002) }}"></div>
+                            <div class="field"><label>Удвоение символа</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_duplication_chance" value="{{ dm_overrides.get('duplication_chance', '') }}" placeholder="Основное: {{ chat_settings.get('duplication_chance', 0.002) }}"></div>
+                            <div class="field"><label>Строчная буква</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_lower_chance" value="{{ dm_overrides.get('lower_chance', '') }}" placeholder="Основное: {{ chat_settings.get('lower_chance', 0.05) }}"></div>
+                            <div class="field"><label>Потеря слов</label><input type="number" step="0.0001" min="0" max="1" name="cluster_dm_word_loss_chance" value="{{ dm_overrides.get('word_loss_chance', '') }}" placeholder="Основное: {{ chat_settings.get('word_loss_chance', 0) }}"></div>
+                            <div class="field"><label>Максимум потерянных слов</label><input type="number" step="1" min="0" name="cluster_dm_max_lost_words" value="{{ dm_overrides.get('max_lost_words', '') }}" placeholder="Основное: {{ chat_settings.get('max_lost_words', 1) }}"></div>
+                        </div>
+                        <div class="section-title">Выбор медиа</div>
+                        <div class="grid-2">
+                            <div class="field"><label>Выбор стикера, от</label><input type="number" step="0.1" min="0" name="cluster_dm_sticker_choosing_delay_min" value="{{ dm_overrides.get('sticker_choosing_delay_min', '') }}" placeholder="Основное: {{ chat_settings.get('sticker_choosing_delay_min', 2) }}"></div>
+                            <div class="field"><label>Выбор стикера, до</label><input type="number" step="0.1" min="0" name="cluster_dm_sticker_choosing_delay_max" value="{{ dm_overrides.get('sticker_choosing_delay_max', '') }}" placeholder="Основное: {{ chat_settings.get('sticker_choosing_delay_max', 5.5) }}"></div>
+                            <div class="field"><label>Первая картинка, от</label><input type="number" step="0.1" min="0" name="cluster_dm_image_choosing_delay_min" value="{{ dm_overrides.get('image_choosing_delay_min', '') }}" placeholder="Основное: {{ chat_settings.get('image_choosing_delay_min', 2) }}"></div>
+                            <div class="field"><label>Первая картинка, до</label><input type="number" step="0.1" min="0" name="cluster_dm_image_choosing_delay_max" value="{{ dm_overrides.get('image_choosing_delay_max', '') }}" placeholder="Основное: {{ chat_settings.get('image_choosing_delay_max', 5.5) }}"></div>
+                            <div class="field"><label>Следующая картинка, от</label><input type="number" step="0.1" min="0" name="cluster_dm_image_additional_delay_min" value="{{ dm_overrides.get('image_additional_delay_min', '') }}" placeholder="Основное: {{ chat_settings.get('image_additional_delay_min', 0.2) }}"></div>
+                            <div class="field"><label>Следующая картинка, до</label><input type="number" step="0.1" min="0" name="cluster_dm_image_additional_delay_max" value="{{ dm_overrides.get('image_additional_delay_max', '') }}" placeholder="Основное: {{ chat_settings.get('image_additional_delay_max', 0.8) }}"></div>
+                        </div>
+                    </details>
+                    <div class="field">
+                        <label for="cluster_dm_prompt">Системный контекст при переходе из группы в личку</label>
+                        <textarea name="cluster_dm_prompt" id="cluster_dm_prompt" rows="7">{{ chat_settings.get('cluster_dm_prompt', '') }}</textarea>
+                        <div class="field-hint">Маркеры: {group_name}, {dm_name}, {group_context}, {dm_context}. Команды exit() и ignore(минуты) доступны только в личке.</div>
+                    </div>
+                    <div class="field">
+                        <label for="cluster_group_prompt">Системный контекст при временном возвращении в группу</label>
+                        <textarea name="cluster_group_prompt" id="cluster_group_prompt" rows="5">{{ chat_settings.get('cluster_group_prompt', '') }}</textarea>
+                    </div>
+                    <div class="field">
+                        <label for="cluster_context_prompt">Задание модели памяти для первого контекста лички</label>
+                        <textarea name="cluster_context_prompt" id="cluster_context_prompt" rows="5">{{ chat_settings.get('cluster_context_prompt', '') }}</textarea>
+                    </div>
+                    {% endif %}
+                    <label class="switch">
+                        <input type="checkbox" name="auto_fallback_enabled" id="auto_fallback_enabled"
+                               {% if chat_settings.get('auto_fallback_enabled', true) %}checked{% endif %}>
+                        <span class="track"></span><span>Цепочка запасных моделей</span>
+                    </label>
+                    <div class="field-hint">Для каждого ответа начинаем с первой модели. Ошибка на всех ключах или исчерпанная квота — переход к следующей. Модели бесплатного предложения GPT пропускаются до выхода за бюджет, даже если платное превышение включено.</div>
+                    <div id="fallback-editor">
+                        <div class="section-title">Порядок моделей в авто-режиме</div>
+                        <textarea name="auto_fallback_models" id="auto_fallback_models" hidden>{{ chat_settings.get('auto_fallback_models', ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gpt-5.4', 'gpt-5.4-mini']) | join('\n') }}</textarea>
+                        <div id="fallback-rows"></div>
+                        <datalist id="fallback-model-catalog"></datalist>
+                        <div class="btn-row">
+                            <button type="button" class="btn btn-sm" id="fallback-add">Добавить модель</button>
+                            <button type="button" class="btn btn-sm" id="fallback-preset">Ваша схема Gemini → GPT</button>
+                        </div>
+                        <div class="field-hint">Любое число моделей и любой порядок. Стрелки переставляют строки. При выключенной цепочке используется модель, выбранная под чатом. Память использует свою отдельную модель.</div>
+                    </div>
+                    <div class="section-title">Проверки и ожидание</div>
+                    <div class="field">
+                        <label for="auto_fallback_request_timeout_s">Ожидание ответа API на одном ключе, сек</label>
+                        <input type="number" name="auto_fallback_request_timeout_s" id="auto_fallback_request_timeout_s"
+                               min="5" step="1" value="{{ chat_settings.get('auto_fallback_request_timeout_s', 300) }}">
+                        <div class="field-hint">Включённая цепочка переходит к следующему ключу или модели при ошибке или таймауте. Увеличьте для моделей с долгими рассуждениями.</div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label for="auto_mode_check_interval">Интервал проверки, сек</label>
+                            <input type="number" step="0.1" min="0.5" name="auto_mode_check_interval"
+                                   id="auto_mode_check_interval"
+                                   value="{{ chat_settings.get('auto_mode_check_interval', 3.5) }}">
+                        </div>
+                        <div class="field">
+                            <label for="auto_mode_initial_wait">Пауза перед ответом, сек</label>
+                            <input type="number" step="0.1" min="0" name="auto_mode_initial_wait"
+                                   id="auto_mode_initial_wait"
+                                   value="{{ chat_settings.get('auto_mode_initial_wait', 6.0) }}">
+                        </div>
+                    </div>
+                    <div class="field-hint" style="margin-top:-6px;">
+                        Пауза нужна, чтобы не отвечать на каждое сообщение из серии по отдельности.
+                    </div>
+
+                    <div class="field">
+                        <label for="auto_mode_no_reply_timeout">Написать первым после молчания, <strong>минут</strong></label>
+                        <input type="number" step="0.1" min="0" name="auto_mode_no_reply_timeout"
+                               id="auto_mode_no_reply_timeout"
+                               value="{{ chat_settings.get('auto_mode_no_reply_timeout', 4.0) }}">
+                        <div class="field-hint">Здесь минуты, в отличие от полей выше — там секунды.</div>
+                    </div>
+
+                    <div class="field">
+                        <label for="auto_mode_no_reply_suffix">Что дописать в промпт при молчании</label>
+                        <textarea name="auto_mode_no_reply_suffix" id="auto_mode_no_reply_suffix" rows="3">{{ chat_settings.get('auto_mode_no_reply_suffix', '') }}</textarea>
+                    </div>
+                </div>
+
+                <!-- ---------- Поведение ---------- -->
+                <div class="tab-panel" id="tab-human">
+                    <div class="section-title">Задержки печати</div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label for="base_thinking_delay_s_min">Пауза «думает», от (сек)</label>
+                            <input type="number" step="0.1" min="0" name="base_thinking_delay_s_min"
+                                   id="base_thinking_delay_s_min"
+                                   value="{{ chat_settings.get('base_thinking_delay_s_min', 1.2) }}">
+                        </div>
+                        <div class="field">
+                            <label for="base_thinking_delay_s_max">до (сек)</label>
+                            <input type="number" step="0.1" min="0" name="base_thinking_delay_s_max"
+                                   id="base_thinking_delay_s_max"
+                                   value="{{ chat_settings.get('base_thinking_delay_s_max', 2.8) }}">
+                        </div>
+                        <div class="field">
+                            <label for="typing_delay_ms_min">Мс на символ, от</label>
+                            <input type="number" step="1" min="0" name="typing_delay_ms_min"
+                                   id="typing_delay_ms_min"
+                                   value="{{ chat_settings.get('typing_delay_ms_min', 40) }}">
+                        </div>
+                        <div class="field">
+                            <label for="typing_delay_ms_max">до</label>
+                            <input type="number" step="1" min="0" name="typing_delay_ms_max"
+                                   id="typing_delay_ms_max"
+                                   value="{{ chat_settings.get('typing_delay_ms_max', 90) }}">
+                        </div>
+                        <div class="field">
+                            <label for="max_typing_duration_s">Максимум печати, сек</label>
+                            <input type="number" step="0.5" min="1" name="max_typing_duration_s"
+                                   id="max_typing_duration_s"
+                                   value="{{ chat_settings.get('max_typing_duration_s', 25.0) }}">
+                        </div>
+                    </div>
+
+                    <div class="section-title">Выбор стикера</div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label for="sticker_choosing_delay_min">Задержка, от (сек)</label>
+                            <input type="number" step="0.1" min="0" name="sticker_choosing_delay_min"
+                                   id="sticker_choosing_delay_min"
+                                   value="{{ chat_settings.get('sticker_choosing_delay_min', 2.0) }}">
+                        </div>
+                        <div class="field">
+                            <label for="sticker_choosing_delay_max">до (сек)</label>
+                            <input type="number" step="0.1" min="0" name="sticker_choosing_delay_max"
+                                   id="sticker_choosing_delay_max"
+                                   value="{{ chat_settings.get('sticker_choosing_delay_max', 5.5) }}">
+                        </div>
+                    </div>
+
+                    <div class="section-title">Выбор картинок</div>
+                    <div class="grid-2">
+                        {% for name, label, default in [
+                            ('image_choosing_delay_min', 'Первая картинка, от (сек)', 2.0),
+                            ('image_choosing_delay_max', 'до (сек)', 5.5),
+                            ('image_additional_delay_min', 'Каждая следующая, от (сек)', 0.2),
+                            ('image_additional_delay_max', 'до (сек)', 0.8)] %}
+                        <div class="field">
+                            <label for="{{ name }}">{{ label }}</label>
+                            <input type="number" name="{{ name }}" id="{{ name }}" step="0.1" min="0"
+                                   value="{{ chat_settings.get(name, default) }}">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="field-hint">Сначала печать подписи, потом выбор всех картинок. Во время выбора — онлайн, без отметок прочтения в этом чате.</div>
+
+                    <div class="section-title">Лексикон персонажа</div>
+                    <div class="field-hint">Замены текста и подписей перед опечатками, сверху вниз.
+                        Учитывается регистр; искать можно любые символы, слова и фразы.
+                        Шанс проверяется отдельно для каждого совпадения: 1 = 100%, 0.5 = 50%.
+                        Пустая замена удаляет найденный текст.</div>
+                    <input type="hidden" name="lexicon_rules" id="lexicon-rules"
+                           value="{{ chat_settings.get('lexicon_rules', [])|tojson|forceescape }}">
+                    <div id="lexicon-rows"></div>
+                    <button type="button" class="btn btn-sm" id="lexicon-add">Добавить замену</button>
+
+                    <div class="section-title">Опечатки</div>
+                    <div class="field-hint" style="margin-bottom:10px;">
+                        Вероятность на символ. Сообщение отправляется с опечаткой, а потом
+                        правится — как это делают люди. 0 — выключить.
+                    </div>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label for="substitution_chance">Замена символа</label>
+                            <input type="number" step="0.0001" min="0" max="1" name="substitution_chance"
+                                   id="substitution_chance"
+                                   value="{{ chat_settings.get('substitution_chance', 0.005) }}">
+                        </div>
+                        <div class="field">
+                            <label for="transposition_chance">Перестановка</label>
+                            <input type="number" step="0.0001" min="0" max="1" name="transposition_chance"
+                                   id="transposition_chance"
+                                   value="{{ chat_settings.get('transposition_chance', 0.005) }}">
+                        </div>
+                        <div class="field">
+                            <label for="skip_chance">Пропуск</label>
+                            <input type="number" step="0.0001" min="0" max="1" name="skip_chance"
+                                   id="skip_chance"
+                                   value="{{ chat_settings.get('skip_chance', 0.002) }}">
+                        </div>
+                        <div class="field">
+                            <label for="duplication_chance">Удвоение символа</label>
+                            <input type="number" step="0.0001" min="0" max="1" name="duplication_chance"
+                                   id="duplication_chance"
+                                   value="{{ chat_settings.get('duplication_chance', 0.002) }}">
+                            <div class="field-hint">Случайное двойное нажатие: «привет» → «приивет».</div>
+                        </div>
+                        <div class="field">
+                            <label for="lower_chance">Неверный регистр</label>
+                            <input type="number" step="0.01" min="0" max="1" name="lower_chance"
+                                   id="lower_chance"
+                                   value="{{ chat_settings.get('lower_chance', 0.05) }}">
+                        </div>
+                        <div class="field">
+                            <label for="word_loss_chance">Потеря слова</label>
+                            <input type="number" step="0.01" min="0" max="1" name="word_loss_chance"
+                                   id="word_loss_chance"
+                                   value="{{ chat_settings.get('word_loss_chance', 0.0) }}">
+                        </div>
+                        <div class="field">
+                            <label for="max_lost_words">Слов максимум</label>
+                            <input type="number" step="1" min="1" max="5" name="max_lost_words"
+                                   id="max_lost_words"
+                                   value="{{ chat_settings.get('max_lost_words', 1) }}">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ---------- Медиа ---------- -->
+                <div class="tab-panel" id="tab-media">
+                    <div class="field">
+                        <label for="image_history_ttl_hours">Хранить связь отправленной картинки с её кодом, часов</label>
+                        <input type="number" name="image_history_ttl_hours" id="image_history_ttl_hours" step="0.1" min="0"
+                               value="{{ chat_settings.get('image_history_ttl_hours', 168) }}">
+                        <div class="field-hint">При выключенном просмотре фото модель видит <code>image(код)</code> и описание вашей картинки. Очистка раз в минуту. 0 — не хранить.</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" name="ignore_all_media" id="ignore_all_media"
+                               {{ 'checked' if chat_settings.get('ignore_all_media') }}>
+                        <span class="track"></span>
+                        <span>Игнорировать все медиа (перебивает переключатели ниже)</span>
+                    </label>
+
+                    <div id="media-types">
+                        <label class="switch">
+                            <input type="checkbox" name="can_see_photos"
+                                   {{ 'checked' if chat_settings.get('can_see_photos', True) }}>
+                            <span class="track"></span><span>Видит фотографии</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" name="can_see_videos"
+                                   {{ 'checked' if chat_settings.get('can_see_videos', True) }}>
+                            <span class="track"></span><span>Видит видео</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" name="can_see_audio"
+                                   {{ 'checked' if chat_settings.get('can_see_audio', True) }}>
+                            <span class="track"></span><span>Слышит голосовые и аудио</span>
+                        </label>
+                        <label class="switch">
+                            <input type="checkbox" name="can_see_files_pdf"
+                                   {{ 'checked' if chat_settings.get('can_see_files_pdf', True) }}>
+                            <span class="track"></span><span>Читает PDF</span>
+                        </label>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal-foot">
+            <button type="button" class="btn btn-danger" id="reset-settings" style="margin-right:auto;">Сбросить для чата</button>
+            <button type="button" class="btn" data-close-modal="settings-modal">Отмена</button>
+            <button type="button" class="btn" id="save-settings-chat">Сохранить для чата</button>
+            <button type="button" class="btn btn-primary" id="save-settings-default">Сохранить и как дефолт</button>
+        </div>
+    </div>
+</div>

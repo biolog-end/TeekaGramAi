@@ -1,0 +1,59 @@
+{# Картинки: whitelist на активного персонажа. Файлы кладутся в data/images/,
+   имя без расширения = codename. Модель шлёт их командой image(codename). #}
+<div class="modal" id="image-modal">
+    <div class="modal-box wide">
+        <div class="modal-head">
+            <h2>Картинки</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="image-modal" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="modal-body">
+            <p class="field-hint" style="margin-top:0;">
+                Файлы (jpg, png, webp, gif) кладите в папку <code>data/images/</code>. Имя файла
+                без расширения — codename, которым модель пошлёт картинку командой
+                <code>image(имя)</code>. Отмеченные попадут в промпт активного персонажа.
+            </p>
+
+            <div class="field">
+                <input type="search" id="image-filter" placeholder="Поиск по имени или описанию">
+            </div>
+
+            <form id="image-form">
+                {% if images_list %}
+                    <div class="image-grid">
+                        {% for image in images_list %}
+                            <label class="image-card{{ ' image-missing' if not image.exists else '' }}"
+                                   data-codename="{{ image.codename }}"
+                                   data-search="{{ (image.codename ~ ' ' ~ (image.description or ''))|lower }}">
+                                <input type="checkbox" name="image_enabled" class="image-cb"
+                                       value="{{ image.codename }}"
+                                       {{ 'checked' if active_character_data and image.codename in (active_character_data.enabled_images or []) }}
+                                       {{ 'disabled' if not image.exists }}>
+                                {% if image.exists %}
+                                    <img class="image-thumb" src="/image/{{ image.codename }}" alt="" loading="lazy">
+                                {% else %}
+                                    <div class="image-thumb image-thumb-missing">файла нет</div>
+                                {% endif %}
+                                <span class="image-code">{{ image.codename }}</span>
+                                <textarea class="image-desc" rows="2"
+                                          placeholder="описание для модели (опционально)">{{ image.description }}</textarea>
+                            </label>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty">
+                        Папка <code>data/images/</code> пуста. Положите туда jpg/png/webp/gif и перезагрузите страницу.
+                    </div>
+                {% endif %}
+            </form>
+        </div>
+
+        <div class="modal-foot">
+            <button type="button" class="btn btn-sm" id="images-all" style="margin-right:auto;">Включить все</button>
+            <button type="button" class="btn btn-sm" id="images-none">Выключить все</button>
+            <button type="button" class="btn btn-sm" id="images-copy-prompt">Скопировать промпт</button>
+            <button type="button" class="btn" data-close-modal="image-modal">Отмена</button>
+            <button type="button" class="btn btn-primary" id="save-images">Сохранить</button>
+        </div>
+    </div>
+</div>

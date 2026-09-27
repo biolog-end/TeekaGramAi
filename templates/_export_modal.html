@@ -1,0 +1,47 @@
+{# Экспорт истории чата за диапазон в JSON. Дата и время — в локальном часовом
+   поясе браузера пользователя. #}
+<div class="modal" id="export-modal">
+    <div class="modal-box" style="max-width:520px;">
+        <div class="modal-head">
+            <h2>Экспорт истории</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="export-modal" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="modal-body">
+            <p class="field-hint" style="margin:0 0 14px;">
+                Скачивается JSON: кто, что и когда написал, реакции с именами, ответы
+                с превью оригинала (или цитатой, если она была). Диапазон — в вашем
+                местном времени.
+            </p>
+
+            <div class="grid-2">
+                <div class="field">
+                    <label for="export-from">С</label>
+                    <input type="datetime-local" id="export-from">
+                </div>
+                <div class="field">
+                    <label for="export-to">По</label>
+                    <input type="datetime-local" id="export-to">
+                </div>
+            </div>
+
+            <div class="btn-row" style="margin-top:8px;">
+                <button type="button" class="btn btn-sm" data-range="1h">Последний час</button>
+                <button type="button" class="btn btn-sm" data-range="today">Сегодня</button>
+                <button type="button" class="btn btn-sm" data-range="yesterday">Вчера</button>
+                <button type="button" class="btn btn-sm" data-range="7d">За неделю</button>
+                <button type="button" class="btn btn-sm" data-range="30d">За 30 дней</button>
+            </div>
+
+            <div class="field-hint" style="margin-top:14px;">
+                Совет: не берите слишком большой диапазон разом — Telethon читает
+                историю подряд, длинные периоды заметно медленнее.
+            </div>
+        </div>
+
+        <div class="modal-foot">
+            <button type="button" class="btn" data-close-modal="export-modal">Отмена</button>
+            <button type="button" class="btn btn-primary" id="export-run">Скачать JSON</button>
+        </div>
+    </div>
+</div>

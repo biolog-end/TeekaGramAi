@@ -1,0 +1,5 @@
+{# Аватарка чата: инициал на цветной подложке, поверх — картинка, если есть.
+   404 от /avatar убирает <img>, и инициал остаётся виден. #}
+{% macro avatar(id, name, photo_id, extra_class='') -%}
+<span class="chat-avatar av-{{ (id|abs) % 6 }} {{ extra_class }}">{{ (name or '?')[:1]|upper }}{% if photo_id %}<img class="avatar-img" src="{{ url_for('get_avatar_route', chat_id=id) }}?v={{ photo_id }}" loading="lazy" alt="" onerror="this.remove()">{% endif %}</span>
+{%- endmacro %}

@@ -1,0 +1,102 @@
+{# Редактор персонажа и создание нового. #}
+{% if active_character_id and active_character_data %}
+<div class="modal" id="character-modal">
+    <div class="modal-box wide">
+        <div class="modal-head">
+            <h2>Персонаж: {{ active_character_data.name }}</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="character-modal" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="modal-body">
+            <form id="character-form">
+                <div class="field">
+                    <label for="character_name">Имя</label>
+                    <input type="text" name="character_name" id="character_name"
+                           value="{{ active_character_data.name }}">
+                </div>
+
+                <div class="field tone-personality">
+                    <label for="personality_prompt">Личность и манера речи</label>
+                    <textarea name="personality_prompt" id="personality_prompt" rows="7">{{ active_character_data.personality_prompt }}</textarea>
+                </div>
+
+                <div class="field tone-context">
+                    <label for="chat_context_prompt">Контекст именно этого чата</label>
+                    <textarea name="chat_context_prompt" id="chat_context_prompt" rows="4">{{ chat_settings.get('chat_context_prompt', '') }}</textarea>
+                    <div class="field-hint">Хранится отдельно для каждого чата, у персонажа не остаётся.</div>
+                </div>
+
+                <div class="field tone-memory">
+                    <label for="memory_prompt">Память</label>
+                    <textarea name="memory_prompt" id="memory_prompt" rows="7">{{ active_character_data.memory_prompt }}</textarea>
+                    <div class="field-hint">Пополняется автоматически, но можно править руками.</div>
+                </div>
+
+                <div class="field">
+                    <label for="memory_model_name">Модель для памяти</label>
+                    <select name="memory_model_name" id="memory_model_name">
+                        <option value="" {{ 'selected' if not active_character_data.get('memory_model_name') else '' }}>Автоматически: по провайдеру модели чата</option>
+                        {% set saved_memory_model = active_character_data.get('memory_model_name', '') %}
+                        {% if saved_memory_model and saved_memory_model not in model_options|map(attribute='id')|list %}
+                        <option value="{{ saved_memory_model }}" selected>{{ saved_memory_model }} (сохранена ранее)</option>
+                        {% endif %}
+                        {% for model in model_options %}
+                        <option value="{{ model.id }}" {{ 'selected' if model.id == saved_memory_model else '' }}>{{ model.provider|upper }} · {{ model.label }} · {{ model.price }} · {{ ('есть Free Tier' if model.provider == 'gemini' else 'бесплатная') if model.free_tier else ('платная' if model.free_tier is sameas false else 'тариф неизвестен') }}{% if model.get('access_note') %} · {{ model.access_note }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="field-hint">Для ручной записи и автопамяти. Пусто — GPT-5 mini или Gemini 2.5 Flash-Lite, в зависимости от модели чата.</div>
+                    <div class="field-hint">Доступ новых проектов к Gemini 2.5 ограничен Google.
+                        Если модель памяти недоступна, выберите Gemini 3.1 Flash-Lite или 3.5 Flash-Lite;
+                        реальные квоты каждого проекта смотрите в AI Studio.</div>
+                </div>
+
+                <details class="adv">
+                    <summary>Промпты для служебных задач</summary>
+                    <div>
+                        <div class="field tone-system">
+                            <label for="system_commands_prompt">Системные команды</label>
+                            <textarea name="system_commands_prompt" id="system_commands_prompt" rows="6">{{ active_character_data.system_commands_prompt }}</textarea>
+                            <div class="field-hint">
+                                Описывает модели синтаксис <code>{split}</code>, <code>answer(id)</code>,
+                                <code>react(id)[эмодзи]</code>, <code>sticker(имя)</code>. Список доступных
+                                стикеров подставляется автоматически, вручную его писать не нужно.
+                            </div>
+                        </div>
+                        <div class="field tone-summary">
+                            <label for="memory_update_prompt">Промпт сжатия памяти</label>
+                            <textarea name="memory_update_prompt" id="memory_update_prompt" rows="6">{{ active_character_data.memory_update_prompt }}</textarea>
+                        </div>
+                    </div>
+                </details>
+            </form>
+        </div>
+
+        <div class="modal-foot">
+            <button type="button" class="btn" data-close-modal="character-modal">Отмена</button>
+            <button type="button" class="btn btn-primary" id="save-character">Сохранить</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="modal" id="new-character-modal">
+    <div class="modal-box" style="max-width:440px;">
+        <div class="modal-head">
+            <h2>Новый персонаж</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="new-character-modal" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label for="new_character_name">Имя персонажа</label>
+                <input type="text" id="new_character_name" placeholder="Например: Махир">
+            </div>
+            <div class="field-hint">
+                Персонаж создастся с шаблонными промптами — заполните их после создания.
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn" data-close-modal="new-character-modal">Отмена</button>
+            <button type="button" class="btn btn-primary" id="create-character">Создать</button>
+        </div>
+    </div>
+</div>

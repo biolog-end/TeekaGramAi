@@ -1,0 +1,49 @@
+{# Список сообщений. Рендерится и на странице чата, и при обновлении через
+   /api/history/<chat_id> — чтобы разметка сообщения жила в одном месте.
+
+   Показывает ровно то, что получит модель при текущих настройках чата: тот же текст,
+   медиа только там, где модель их видит, превью стикера только в vision-режиме.
+   Текст, включая ID, дату, <ник:Имя> и команды ответов, отображается без преобразований. #}
+<div class="messages" id="messages">
+    {% for msg in history %}
+        <div class="msg {{ msg.role }}">
+            <div class="bubble">
+                {% for part in msg.parts %}
+                    {% if part.text %}
+                        <pre>{{ part.text }}</pre>
+                    {% elif part.type == 'media_placeholder' %}
+                        <div class="media-placeholder"
+                             data-chat-id="{{ part.chat_id }}"
+                             data-message-id="{{ part.message_id }}">
+                            <div class="spinner"></div>
+                        </div>
+                    {% elif part.type == 'sticker_preview' %}
+                        {# Vision-режим: модель получает это же превью. В карантине — только текст выше. #}
+                        {% if part.quarantined %}
+                            <div class="sticker-note">в карантине: модель получает только текст</div>
+                        {% else %}
+                            <img class="msg-sticker" src="/sticker/{{ part.sticker_id }}" alt="стикер"
+                                 loading="lazy" onerror="this.remove()">
+                        {% endif %}
+                    {% elif part.image_base64 %}
+                        <img src="data:{{ part.mime_type }};base64,{{ part.image_base64 }}" alt="изображение" loading="lazy">
+                    {% elif part.video_base64 %}
+                        <video controls loop muted playsinline>
+                            <source src="data:{{ part.mime_type }};base64,{{ part.video_base64 }}" type="{{ part.mime_type }}">
+                        </video>
+                    {% elif part.audio_base64 %}
+                        <audio controls>
+                            <source src="data:{{ part.mime_type }};base64,{{ part.audio_base64 }}" type="{{ part.mime_type }}">
+                        </audio>
+                    {% elif part.file_base64 %}
+                        <a class="pdf-attachment" target="_blank" rel="noopener"
+                           href="data:{{ part.mime_type }};base64,{{ part.file_base64 }}">Открыть PDF</a>
+                    {% endif %}
+                {% endfor %}
+
+            </div>
+        </div>
+    {% else %}
+        <div class="empty">Здесь пока пусто. Загрузите историю или напишите первым.</div>
+    {% endfor %}
+</div>

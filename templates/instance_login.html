@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Вход в Telegram — {{ instance_name }}{% endblock %}
+{% block content %}
+<section class="instance-login">
+    <h1>Вход в Telegram</h1>
+    <p class="hint">{{ instance_name }}</p>
+    <p id="instance-login-message" aria-live="polite">Подключаюсь к Telegram…</p>
+    <form id="instance-login-form" hidden>
+        <div class="field"><label id="instance-login-label" for="instance-login-value">Номер телефона</label><input id="instance-login-value" required autocomplete="off"></div>
+        <button type="submit" id="instance-login-submit" class="btn btn-primary">Продолжить</button>
+    </form>
+    <p class="hint">Код и пароль используются только для входа. Если подключение завершилось ошибкой, остановите и запустите инстанс в меню «Инстансы».</p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/instance_login.js') }}"></script>{% endblock %}

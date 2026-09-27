@@ -1,0 +1,29 @@
+<div class="modal" id="instances-modal" role="dialog" aria-modal="true" aria-labelledby="instances-title">
+    <div class="modal-box wide">
+        <div class="modal-head">
+            <h2 id="instances-title">Инстансы и Telegram-аккаунты</h2>
+            <button type="button" class="btn btn-icon" data-close-modal="instances-modal" aria-label="Закрыть">×</button>
+        </div>
+        <div class="modal-body">
+            <p class="hint">У каждого инстанса свой Telegram-аккаунт, API-ключи, выбор персонажа и настройки чатов. Список персонажей, их память, стикеры и изображения общие.</p>
+            <div id="instances-main" class="instance-card"></div>
+            <div id="instances-list" aria-live="polite"></div>
+            <details class="instance-create">
+                <summary>+ Добавить инстанс</summary>
+                <form id="instance-create-form">
+                    <div class="field"><label for="instance-name">Название инстанса</label><input id="instance-name" name="name" required maxlength="100" placeholder="Например, второй аккаунт"></div>
+                    <div class="field"><label for="instance-account">Telegram-аккаунт</label><select id="instance-account" name="account_name"><option value="">Новый аккаунт</option></select></div>
+                    <div class="field" id="instance-new-account-field"><label for="instance-account-name">Название нового аккаунта</label><input id="instance-account-name" name="new_account_name" maxlength="100" placeholder="Можно оставить название инстанса"></div>
+                    <p class="hint">После запуска откройте инстанс: номер телефона, код Telegram и пароль 2FA вводятся в его окне.</p>
+                    <div class="instance-keys">
+                        <div class="field"><label for="instance-gemini-keys">API-ключи Gemini</label><textarea id="instance-gemini-keys" name="gemini_keys" rows="3" autocomplete="off" spellcheck="false" placeholder="Один или несколько ключей"></textarea></div>
+                        <div class="field"><label for="instance-openai-keys">API-ключи OpenAI</label><textarea id="instance-openai-keys" name="openai_keys" rows="3" autocomplete="off" spellcheck="false" placeholder="Один или несколько ключей"></textarea></div>
+                    </div>
+                    <p class="hint">Ключи основного окна не копируются. Позже их можно изменить в меню ключей самого инстанса.</p>
+                    <button type="submit" class="btn btn-primary" id="instance-create-submit">Создать</button>
+                </form>
+            </details>
+        </div>
+        <div class="modal-foot"><span class="hint">При обычном выходе из основной программы дополнительные процессы остановятся. Аккаунты сохранятся.</span><button type="button" class="btn" data-close-modal="instances-modal">Закрыть</button></div>
+    </div>
+</div>
